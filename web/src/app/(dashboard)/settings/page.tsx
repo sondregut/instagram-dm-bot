@@ -29,22 +29,22 @@ export default function SettingsPage() {
 
   return (
     <div className="max-w-4xl">
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold text-ink">Settings</h1>
-        <p className="text-ink-muted text-sm">Manage your Instagram accounts and AI configuration</p>
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+        <p className="text-gray-500 mt-1">Manage your Instagram accounts and AI configuration</p>
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex border-b border-surface-border mb-5">
+      <div className="flex border-b border-gray-200 mb-6">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={cn(
-              'flex items-center gap-2 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors',
+              'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
               activeTab === tab.id
-                ? 'border-ink text-ink'
-                : 'border-transparent text-ink-muted hover:text-ink'
+                ? 'border-accent text-accent'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             )}
           >
             {tab.icon}
@@ -107,13 +107,13 @@ function AccountsTab() {
   return (
     <div className="space-y-5">
       {/* Connected Accounts */}
-      <div className="rounded-md border border-surface-border bg-surface p-5">
+      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-3">
-            <Link2 className="h-5 w-5 text-ink-muted" />
+            <Link2 className="h-5 w-5 text-gray-500" />
             <div>
-              <h2 className="font-medium text-ink">Connected Accounts</h2>
-              <p className="text-sm text-ink-muted">Manage your Instagram Business accounts</p>
+              <h2 className="font-semibold text-gray-900">Connected Accounts</h2>
+              <p className="text-sm text-gray-500">Manage your Instagram Business accounts</p>
             </div>
           </div>
           <Button onClick={handleConnect} loading={connectMutation.isPending || connectingAccount}>
@@ -129,15 +129,15 @@ function AccountsTab() {
             {accounts.map((account) => (
               <div
                 key={account.id}
-                className="flex items-center justify-between p-3 rounded-md border border-surface-border"
+                className="flex items-center justify-between p-3 rounded-xl border border-gray-200"
               >
                 <div className="flex items-center gap-3">
                   <div className={cn(styles.avatar.base, styles.avatar.sizes.md)}>
                     {account.username.charAt(0).toUpperCase()}
                   </div>
                   <div>
-                    <p className="font-medium text-ink">@{account.username}</p>
-                    <div className="flex items-center gap-2 text-sm text-ink-muted">
+                    <p className="font-semibold text-gray-900">@{account.username}</p>
+                    <div className="flex items-center gap-2 text-sm text-gray-500">
                       {account.pageName && <span>{account.pageName}</span>}
                       <StatusBadge status={account.connectionStatus} />
                     </div>
@@ -170,9 +170,9 @@ function AccountsTab() {
       </div>
 
       {/* Requirements Info */}
-      <div className="rounded-md border-l-2 border-status-info bg-status-info/5 p-4">
-        <h3 className="font-medium text-ink text-sm mb-2">Requirements for Connecting</h3>
-        <ul className="space-y-1.5 text-sm text-ink-muted">
+      <div className={styles.banner.info}>
+        <h3 className="font-semibold text-gray-900 mb-3">Requirements for Connecting</h3>
+        <ul className="space-y-2 text-sm text-gray-600">
           <li className="flex items-start gap-2">
             <CheckCircle className="h-4 w-4 mt-0.5 text-status-info flex-shrink-0" />
             <span>Instagram Business or Creator account</span>
@@ -256,7 +256,7 @@ function AIPersonalityTab() {
 
   if (!selectedAccount) {
     return (
-      <div className="rounded-md border border-surface-border bg-surface p-5">
+      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
         <NoAccountPrompt />
       </div>
     );
@@ -265,13 +265,15 @@ function AIPersonalityTab() {
   return (
     <div className="space-y-5">
       {/* Generate from Website Banner */}
-      <div className="rounded-md border-l-2 border-accent bg-accent/5 p-4">
+      <div className={styles.banner.accent}>
         <div className="flex items-center justify-between">
           <div className="flex items-start gap-3">
-            <Sparkles className="h-5 w-5 text-accent mt-0.5" />
+            <div className="rounded-lg bg-gradient-to-br from-accent to-accent-secondary p-2">
+              <Sparkles className="h-5 w-5 text-white" />
+            </div>
             <div>
-              <h3 className="font-medium text-ink text-sm">Auto-Generate Personality</h3>
-              <p className="text-sm text-ink-muted">
+              <h3 className="font-semibold text-gray-900">Auto-Generate Personality</h3>
+              <p className="text-sm text-gray-600">
                 Let AI analyze your website and auto-fill all personality settings
               </p>
             </div>
@@ -296,12 +298,12 @@ function AIPersonalityTab() {
       )}
 
       {/* AI Name & Description */}
-      <div className="rounded-md border border-surface-border bg-surface p-5">
+      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
         <div className="flex items-center gap-3 mb-5">
-          <Bot className="h-5 w-5 text-ink-muted" />
+          <Bot className="h-5 w-5 text-gray-500" />
           <div>
-            <h2 className="font-medium text-ink">AI Assistant Identity</h2>
-            <p className="text-sm text-ink-muted">Configure how your AI assistant presents itself</p>
+            <h2 className="font-semibold text-gray-900">AI Assistant Identity</h2>
+            <p className="text-sm text-gray-500">Configure how your AI assistant presents itself</p>
           </div>
         </div>
 
@@ -336,12 +338,12 @@ function AIPersonalityTab() {
       </div>
 
       {/* System Prompt */}
-      <div className="rounded-md border border-surface-border bg-surface p-5">
+      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
         <div className="flex items-center gap-3 mb-5">
-          <MessageSquare className="h-5 w-5 text-ink-muted" />
+          <MessageSquare className="h-5 w-5 text-gray-500" />
           <div>
-            <h2 className="font-medium text-ink">System Instructions</h2>
-            <p className="text-sm text-ink-muted">Detailed instructions for how the AI should behave</p>
+            <h2 className="font-semibold text-gray-900">System Instructions</h2>
+            <p className="text-sm text-gray-500">Detailed instructions for how the AI should behave</p>
           </div>
         </div>
 
@@ -354,7 +356,7 @@ function AIPersonalityTab() {
         />
 
         <div className="mt-4">
-          <label className="block text-sm font-medium text-ink-muted mb-2">Goals</label>
+          <label className="block text-sm font-medium text-gray-500 mb-2">Goals</label>
           <GoalsList
             goals={personality.goals || []}
             onChange={(goals) => updatePersonality({ goals })}
@@ -363,8 +365,8 @@ function AIPersonalityTab() {
       </div>
 
       {/* Custom Instructions */}
-      <div className="rounded-md border border-surface-border bg-surface p-5">
-        <h3 className="font-medium text-ink mb-4">Additional Settings</h3>
+      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
+        <h3 className="font-semibold text-gray-900 mb-4">Additional Settings</h3>
 
         <div className="space-y-4">
           <Textarea
@@ -376,7 +378,7 @@ function AIPersonalityTab() {
           />
 
           <div>
-            <label className="block text-sm font-medium text-ink-muted mb-2">Forbidden Topics (AI will avoid these)</label>
+            <label className="block text-sm font-medium text-gray-500 mb-2">Forbidden Topics (AI will avoid these)</label>
             <TagInput
               tags={personality.forbiddenTopics || []}
               onChange={(forbiddenTopics) => updatePersonality({ forbiddenTopics })}
@@ -385,7 +387,7 @@ function AIPersonalityTab() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-ink-muted mb-2">Handoff Keywords (triggers human notification)</label>
+            <label className="block text-sm font-medium text-gray-500 mb-2">Handoff Keywords (triggers human notification)</label>
             <TagInput
               tags={personality.handoffKeywords || []}
               onChange={(handoffKeywords) => updatePersonality({ handoffKeywords })}
@@ -484,7 +486,7 @@ function KnowledgeBaseTab() {
 
   if (!selectedAccount) {
     return (
-      <div className="rounded-md border border-surface-border bg-surface p-5">
+      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
         <NoAccountPrompt />
       </div>
     );
@@ -497,12 +499,14 @@ function KnowledgeBaseTab() {
   return (
     <div className="space-y-5">
       {/* Info Banner */}
-      <div className="rounded-md border-l-2 border-accent bg-accent/5 p-4">
+      <div className={styles.banner.accent}>
         <div className="flex items-start gap-3">
-          <Brain className="h-5 w-5 text-accent mt-0.5" />
+          <div className="rounded-lg bg-gradient-to-br from-accent to-accent-secondary p-2">
+            <Brain className="h-5 w-5 text-white" />
+          </div>
           <div>
-            <h3 className="font-medium text-ink text-sm">Knowledge Base</h3>
-            <p className="text-sm text-ink-muted">
+            <h3 className="font-semibold text-gray-900">Knowledge Base</h3>
+            <p className="text-sm text-gray-600">
               Add FAQs and website content to help your AI provide accurate, contextual responses.
             </p>
           </div>
@@ -510,21 +514,21 @@ function KnowledgeBaseTab() {
       </div>
 
       {/* FAQs Section */}
-      <div className="rounded-md border border-surface-border bg-surface p-5">
-        <h3 className="font-medium text-ink mb-4">Frequently Asked Questions</h3>
+      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
+        <h3 className="font-semibold text-gray-900 mb-4">Frequently Asked Questions</h3>
 
         {/* Existing FAQs */}
         <div className="space-y-2 mb-5">
           {knowledgeBase?.faqs?.map((faq) => (
-            <div key={faq.id} className="p-3 rounded-md bg-surface-sunken border border-surface-border">
+            <div key={faq.id} className="p-3 rounded-xl bg-gray-50 border border-gray-200">
               <div className="flex justify-between items-start">
                 <div className="flex-1">
-                  <p className="font-medium text-ink text-sm">{faq.question}</p>
-                  <p className="text-sm text-ink-muted mt-1">{faq.answer}</p>
+                  <p className="font-semibold text-gray-900 text-sm">{faq.question}</p>
+                  <p className="text-sm text-gray-500 mt-1">{faq.answer}</p>
                 </div>
                 <button
                   onClick={() => removeFaqMutation.mutate(faq.id)}
-                  className="text-ink-subtle hover:text-status-error ml-2"
+                  className="text-gray-400 hover:text-status-error ml-2"
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
@@ -532,13 +536,13 @@ function KnowledgeBaseTab() {
             </div>
           ))}
           {(!knowledgeBase?.faqs || knowledgeBase.faqs.length === 0) && (
-            <p className="text-sm text-ink-subtle text-center py-4">No FAQs added yet</p>
+            <p className="text-sm text-gray-400 text-center py-4">No FAQs added yet</p>
           )}
         </div>
 
         {/* Add New FAQ */}
-        <div className="border-t border-surface-border pt-4">
-          <h4 className="text-sm font-medium text-ink-muted mb-3">Add New FAQ</h4>
+        <div className="border-t border-gray-200 pt-4">
+          <h4 className="text-sm font-medium text-gray-500 mb-3">Add New FAQ</h4>
           <div className="space-y-3">
             <Input
               placeholder="Question"
@@ -565,9 +569,9 @@ function KnowledgeBaseTab() {
       </div>
 
       {/* Websites Section */}
-      <div className="rounded-md border border-surface-border bg-surface p-5">
-        <h3 className="font-medium text-ink mb-3">Website Content</h3>
-        <p className="text-sm text-ink-muted mb-4">
+      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
+        <h3 className="font-semibold text-gray-900 mb-3">Website Content</h3>
+        <p className="text-sm text-gray-500 mb-4">
           Add your website URLs. Content will be scraped to help the AI answer questions.
         </p>
 
@@ -576,10 +580,10 @@ function KnowledgeBaseTab() {
           {knowledgeBase?.websites?.map((website) => (
             <div
               key={website.id}
-              className="flex items-center justify-between p-2.5 rounded-md bg-surface-sunken border border-surface-border"
+              className="flex items-center justify-between p-2.5 rounded-xl bg-gray-50 border border-gray-200"
             >
               <div className="flex items-center gap-2">
-                <Globe className="h-4 w-4 text-ink-subtle" />
+                <Globe className="h-4 w-4 text-gray-400" />
                 <a
                   href={website.url}
                   target="_blank"
@@ -591,14 +595,14 @@ function KnowledgeBaseTab() {
               </div>
               <button
                 onClick={() => removeWebsiteMutation.mutate(website.id)}
-                className="text-ink-subtle hover:text-status-error"
+                className="text-gray-400 hover:text-status-error"
               >
                 <Trash2 className="h-4 w-4" />
               </button>
             </div>
           ))}
           {(!knowledgeBase?.websites || knowledgeBase.websites.length === 0) && (
-            <p className="text-sm text-ink-subtle text-center py-4">No websites added yet</p>
+            <p className="text-sm text-gray-400 text-center py-4">No websites added yet</p>
           )}
         </div>
 
@@ -646,7 +650,7 @@ function NotificationSettingsTab() {
 
   if (!selectedAccount) {
     return (
-      <div className="rounded-md border border-surface-border bg-surface p-5">
+      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
         <NoAccountPrompt />
       </div>
     );
@@ -655,8 +659,8 @@ function NotificationSettingsTab() {
   return (
     <div className="space-y-5">
       {/* Collection Settings */}
-      <div className="rounded-md border border-surface-border bg-surface p-5">
-        <h3 className="font-medium text-ink mb-4">Data Collection</h3>
+      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
+        <h3 className="font-semibold text-gray-900 mb-4">Data Collection</h3>
         <div className="space-y-4">
           <Toggle
             label="Collect Email Addresses"
@@ -687,8 +691,8 @@ function NotificationSettingsTab() {
       </div>
 
       {/* Message Prompts */}
-      <div className="rounded-md border border-surface-border bg-surface p-5">
-        <h3 className="font-medium text-ink mb-4">Message Templates</h3>
+      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
+        <h3 className="font-semibold text-gray-900 mb-4">Message Templates</h3>
         <div className="space-y-4">
           <Textarea
             label="Email Collection Prompt"
@@ -715,8 +719,8 @@ function NotificationSettingsTab() {
       </div>
 
       {/* Business Hours */}
-      <div className="rounded-md border border-surface-border bg-surface p-5">
-        <h3 className="font-medium text-ink mb-4">Business Hours</h3>
+      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
+        <h3 className="font-semibold text-gray-900 mb-4">Business Hours</h3>
         <div className="space-y-4">
           <Toggle
             label="Only respond during business hours"
@@ -761,8 +765,8 @@ function NotificationSettingsTab() {
       </div>
 
       {/* Notifications */}
-      <div className="rounded-md border border-surface-border bg-surface p-5">
-        <h3 className="font-medium text-ink mb-4">Email Notifications</h3>
+      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
+        <h3 className="font-semibold text-gray-900 mb-4">Email Notifications</h3>
         <div className="space-y-4">
           <Toggle
             label="Notify on new lead"
@@ -861,19 +865,19 @@ function GenerateFromWebsiteModal({
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
 
       {/* Modal */}
-      <div className="relative bg-surface rounded-lg border border-surface-border max-w-lg w-full mx-4 overflow-hidden">
+      <div className="relative bg-white rounded-lg border border-gray-200 max-w-lg w-full mx-4 overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-surface-border">
+        <div className="flex items-center justify-between p-5 border-b border-gray-200">
           <div className="flex items-center gap-3">
             <Sparkles className="h-5 w-5 text-accent" />
             <div>
-              <h2 className="font-medium text-ink">Generate from Website</h2>
-              <p className="text-sm text-ink-muted">AI will analyze your website content</p>
+              <h2 className="font-semibold text-gray-900">Generate from Website</h2>
+              <p className="text-sm text-gray-500">AI will analyze your website content</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="text-ink-muted hover:text-ink transition-colors"
+            className="text-gray-500 hover:text-ink transition-colors"
           >
             <X className="h-5 w-5" />
           </button>
@@ -882,7 +886,7 @@ function GenerateFromWebsiteModal({
         {/* Content */}
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-ink-muted mb-2">
+            <label className="block text-sm font-medium text-gray-500 mb-2">
               Website URL
             </label>
             <Input
@@ -892,24 +896,24 @@ function GenerateFromWebsiteModal({
               placeholder="https://your-website.com"
               disabled={generateMutation.isPending}
             />
-            <p className="mt-2 text-xs text-ink-subtle">
+            <p className="mt-2 text-xs text-gray-400">
               Enter the URL of your website, landing page, or about page
             </p>
           </div>
 
           {error && (
-            <div className="flex items-start gap-2 p-3 rounded-md bg-status-error/5 border border-status-error/20">
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-status-error/5 border border-status-error/20">
               <AlertCircle className="h-4 w-4 text-status-error mt-0.5 flex-shrink-0" />
               <p className="text-sm text-status-error">{error}</p>
             </div>
           )}
 
           {generateMutation.isPending && (
-            <div className="flex items-center gap-3 p-4 rounded-md bg-accent/5 border border-accent/20">
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-accent/5 border border-accent/20">
               <span className={cn(styles.spinner, 'text-accent')} />
               <div>
-                <p className="text-sm font-medium text-ink">Analyzing website...</p>
-                <p className="text-xs text-ink-muted">This may take a few seconds</p>
+                <p className="text-sm font-semibold text-gray-900">Analyzing website...</p>
+                <p className="text-xs text-gray-500">This may take a few seconds</p>
               </div>
             </div>
           )}
@@ -981,9 +985,9 @@ function GoalsList({ goals, onChange }: { goals: string[]; onChange: (goals: str
   return (
     <div className="space-y-2">
       {goals.map((goal, index) => (
-        <div key={index} className="flex items-center gap-2 p-2 rounded-md bg-surface-sunken">
+        <div key={index} className="flex items-center gap-2 p-2 rounded-xl bg-gray-50">
           <span className="flex-1 text-sm text-ink">{goal}</span>
-          <button onClick={() => removeGoal(index)} className="text-ink-subtle hover:text-status-error">
+          <button onClick={() => removeGoal(index)} className="text-gray-400 hover:text-status-error">
             <Trash2 className="h-4 w-4" />
           </button>
         </div>
@@ -1034,7 +1038,7 @@ function TagInput({
             className={cn(styles.badge.base, styles.badge.neutral, 'inline-flex items-center gap-1')}
           >
             {tag}
-            <button onClick={() => removeTag(tag)} className="text-ink-subtle hover:text-status-error">
+            <button onClick={() => removeTag(tag)} className="text-gray-400 hover:text-status-error">
               &times;
             </button>
           </span>

@@ -32,11 +32,11 @@ export default function DashboardPage() {
   if (accounts.length === 0) {
     return (
       <div>
-        <div className="mb-6">
-          <h1 className="text-xl font-semibold text-ink">Dashboard</h1>
-          <p className="text-ink-muted text-sm">Monitor your Instagram DM automation</p>
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+          <p className="text-gray-500 mt-1">Monitor your Instagram DM automation</p>
         </div>
-        <div className="rounded-md border border-surface-border bg-surface">
+        <div className="rounded-xl bg-white shadow-sm border border-gray-100">
           <NoAccountPrompt onConnectClick={() => window.location.href = '/settings'} />
         </div>
       </div>
@@ -53,7 +53,7 @@ export default function DashboardPage() {
 
   if (error) {
     return (
-      <div className="rounded-md border-l-2 border-status-error bg-status-error/5 p-4 text-status-error text-sm">
+      <div className="rounded-xl bg-red-50 border border-red-200 p-6 text-status-error">
         Failed to load dashboard stats. Please try again.
       </div>
     );
@@ -61,13 +61,13 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold text-ink">Dashboard</h1>
-        <p className="text-ink-muted text-sm">Monitor your Instagram DM automation</p>
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <p className="text-gray-500 mt-1">Monitor your Instagram DM automation</p>
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <StatsCard
           title="Total Leads"
           value={stats?.leads.total || 0}
@@ -95,47 +95,47 @@ export default function DashboardPage() {
       </div>
 
       {/* Lead Sources */}
-      <div className="mt-6">
-        <h2 className="mb-3 text-sm font-medium text-ink">
+      <div className="mt-8">
+        <h2 className="mb-4 text-lg font-semibold text-gray-900">
           Leads by Source
         </h2>
-        <div className="rounded-md border border-surface-border bg-surface p-5">
+        <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
           {stats?.leads.bySource && Object.keys(stats.leads.bySource).length > 0 ? (
-            <div className="space-y-3">
+            <div className="space-y-4">
               {Object.entries(stats.leads.bySource).map(([source, count]) => (
                 <div key={source} className="flex items-center justify-between">
-                  <span className="text-sm text-ink-muted capitalize">
+                  <span className="text-sm text-gray-600 capitalize">
                     {source.replace(/_/g, ' ')}
                   </span>
-                  <span className="text-sm font-medium text-ink tabular-nums">
+                  <span className="text-sm font-semibold text-gray-900 tabular-nums">
                     {count}
                   </span>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-sm text-ink-subtle">No leads collected yet</p>
+            <p className="text-sm text-gray-500">No leads collected yet</p>
           )}
         </div>
       </div>
 
       {/* Quick Stats */}
-      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="rounded-md border border-surface-border bg-surface p-5">
-          <h2 className="mb-3 text-sm font-medium text-ink">
+      <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
+          <h2 className="mb-4 text-lg font-semibold text-gray-900">
             Email Collection
           </h2>
           <div className="flex items-baseline gap-2">
-            <span className="text-3xl font-semibold text-ink tabular-nums">
+            <span className="text-4xl font-bold text-gray-900 tabular-nums">
               {stats?.leads.withEmail || 0}
             </span>
-            <span className="text-ink-muted text-sm">
+            <span className="text-gray-500 text-sm">
               / {stats?.leads.total || 0} leads
             </span>
           </div>
-          <div className="mt-3 h-1.5 w-full rounded-full bg-surface-sunken">
+          <div className="mt-4 h-2 w-full rounded-full bg-gray-100">
             <div
-              className="h-1.5 rounded-full bg-accent"
+              className="h-2 rounded-full bg-gradient-to-r from-accent to-accent-secondary"
               style={{
                 width: `${
                   stats?.leads.total
@@ -145,7 +145,7 @@ export default function DashboardPage() {
               }}
             />
           </div>
-          <p className="mt-2 text-sm text-ink-muted">
+          <p className="mt-3 text-sm text-gray-500">
             {stats?.leads.total
               ? Math.round((stats.leads.withEmail / stats.leads.total) * 100)
               : 0}
@@ -153,24 +153,24 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <div className="rounded-md border border-surface-border bg-surface p-5">
-          <h2 className="mb-3 text-sm font-medium text-ink">
+        <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
+          <h2 className="mb-4 text-lg font-semibold text-gray-900">
             This Week
           </h2>
-          <div className="space-y-3">
+          <div className="space-y-4">
             <div className="flex justify-between">
-              <span className="text-ink-muted text-sm">New Leads</span>
-              <span className="font-medium text-sm tabular-nums">{stats?.leads.last7Days || 0}</span>
+              <span className="text-gray-600 text-sm">New Leads</span>
+              <span className="font-semibold text-gray-900 tabular-nums">{stats?.leads.last7Days || 0}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-ink-muted text-sm">Followers Welcomed</span>
-              <span className="font-medium text-sm tabular-nums">
+              <span className="text-gray-600 text-sm">Followers Welcomed</span>
+              <span className="font-semibold text-gray-900 tabular-nums">
                 {stats?.followers.last7Days || 0}
               </span>
             </div>
             <div className="flex justify-between">
-              <span className="text-ink-muted text-sm">Leads with Phone</span>
-              <span className="font-medium text-sm tabular-nums">{stats?.leads.withPhone || 0}</span>
+              <span className="text-gray-600 text-sm">Leads with Phone</span>
+              <span className="font-semibold text-gray-900 tabular-nums">{stats?.leads.withPhone || 0}</span>
             </div>
           </div>
         </div>

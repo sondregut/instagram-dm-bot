@@ -70,7 +70,7 @@ export function Modal({
               <h2 className={styles.modal.title}>{title}</h2>
               <button
                 onClick={onClose}
-                className="rounded-md p-1 text-ink-muted hover:bg-surface-sunken hover:text-ink"
+                className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
               >
                 <X className="h-5 w-5" />
               </button>

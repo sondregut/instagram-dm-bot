@@ -24,6 +24,8 @@ const config: Config = {
           DEFAULT: 'rgb(var(--accent) / <alpha-value>)',
           hover: 'rgb(var(--accent-hover) / <alpha-value>)',
           muted: 'rgb(var(--accent-muted) / <alpha-value>)',
+          secondary: 'rgb(var(--accent-secondary) / <alpha-value>)',
+          'secondary-muted': 'rgb(var(--accent-secondary-muted) / <alpha-value>)',
         },
         status: {
           success: 'rgb(var(--status-success) / <alpha-value>)',

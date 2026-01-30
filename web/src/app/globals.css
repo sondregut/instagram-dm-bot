@@ -14,10 +14,14 @@
   --surface-sunken: 245 245 245;
   --surface-border: 229 229 229;
 
-  /* Accent */
-  --accent: 13 148 136;
-  --accent-hover: 15 118 110;
-  --accent-muted: 204 251 241;
+  /* Accent - Instagram pink */
+  --accent: 225 48 108;
+  --accent-hover: 193 53 132;
+  --accent-muted: 253 232 240;
+
+  /* Secondary accent - Instagram purple */
+  --accent-secondary: 131 58 180;
+  --accent-secondary-muted: 243 232 255;
 
   /* Status */
   --status-success: 34 197 94;

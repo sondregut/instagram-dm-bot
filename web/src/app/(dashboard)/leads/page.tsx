@@ -78,11 +78,11 @@ export default function LeadsPage() {
   if (accounts.length === 0) {
     return (
       <div>
-        <div className="mb-6">
-          <h1 className="text-xl font-semibold text-ink">Leads</h1>
-          <p className="text-ink-muted text-sm">Manage collected leads and contacts</p>
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-gray-900">Leads</h1>
+          <p className="text-gray-500 mt-1">Manage collected leads and contacts</p>
         </div>
-        <div className="rounded-md border border-surface-border bg-surface">
+        <div className="rounded-xl bg-white shadow-sm border border-gray-100">
           <NoAccountPrompt onConnectClick={() => window.location.href = '/settings'} />
         </div>
       </div>
@@ -91,10 +91,10 @@ export default function LeadsPage() {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-ink">Leads</h1>
-          <p className="text-ink-muted text-sm">Manage collected leads and contacts</p>
+          <h1 className="text-2xl font-bold text-gray-900">Leads</h1>
+          <p className="text-gray-500 mt-1">Manage collected leads and contacts</p>
         </div>
         <Button
           onClick={() => exportMutation.mutate()}
@@ -107,20 +107,20 @@ export default function LeadsPage() {
       </div>
 
       {/* Filters */}
-      <div className="mb-5 flex items-center gap-4 p-3 bg-surface rounded-md border border-surface-border">
-        <Filter className="h-4 w-4 text-ink-muted" />
+      <div className="mb-6 flex items-center gap-4 p-4 bg-white rounded-xl shadow-sm border border-gray-100">
+        <Filter className="h-4 w-4 text-gray-400" />
         <Select
           value={sourceFilter}
           onChange={(e) => setSourceFilter(e.target.value)}
           options={sourceOptions}
           className="w-44"
         />
-        <label className="flex items-center gap-2 text-sm text-ink-muted">
+        <label className="flex items-center gap-2 text-sm text-gray-600">
           <input
             type="checkbox"
             checked={hasEmailFilter}
             onChange={(e) => setHasEmailFilter(e.target.checked)}
-            className="rounded border-surface-border text-ink focus:ring-ink"
+            className="rounded border-gray-300 text-accent focus:ring-accent"
           />
           Has Email
         </label>
@@ -131,86 +131,88 @@ export default function LeadsPage() {
           <span className={styles.spinner} />
         </div>
       ) : leads.length === 0 ? (
-        <div className="rounded-md border border-surface-border bg-surface p-12 text-center">
-          <Users className="mx-auto h-10 w-10 text-ink-subtle" />
-          <h3 className="mt-4 text-base font-medium text-ink">
+        <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-12 text-center">
+          <div className="mx-auto w-16 h-16 rounded-full bg-gradient-to-br from-accent/10 to-accent-secondary/10 flex items-center justify-center">
+            <Users className="h-8 w-8 text-accent" />
+          </div>
+          <h3 className="mt-4 text-lg font-semibold text-gray-900">
             No leads yet
           </h3>
-          <p className="mt-1 text-ink-muted text-sm">
+          <p className="mt-2 text-gray-500">
             Leads will appear here when users share their contact info
           </p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-md border border-surface-border bg-surface">
-          <table className="min-w-full divide-y divide-surface-border">
-            <thead className="bg-surface-sunken">
+        <div className="overflow-hidden rounded-xl bg-white shadow-sm border border-gray-100">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
               <tr>
-                <th className="px-5 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wide">
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                   User
                 </th>
-                <th className="px-5 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wide">
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                   Contact
                 </th>
-                <th className="px-5 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wide">
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                   Source
                 </th>
-                <th className="px-5 py-3 text-left text-xs font-medium text-ink-muted uppercase tracking-wide">
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                   Date
                 </th>
-                <th className="px-5 py-3 text-right text-xs font-medium text-ink-muted uppercase tracking-wide">
+                <th className="px-6 py-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-surface-border">
+            <tbody className="divide-y divide-gray-100">
               {leads.map((lead) => (
-                <tr key={lead.id} className="hover:bg-surface-sunken">
-                  <td className="px-5 py-3.5 whitespace-nowrap">
+                <tr key={lead.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       <div className={cn(styles.avatar.base, styles.avatar.sizes.sm)}>
                         {lead.username.charAt(0).toUpperCase()}
                       </div>
-                      <div className="ml-2.5">
-                        <p className="text-sm font-medium text-ink">
+                      <div className="ml-3">
+                        <p className="text-sm font-semibold text-gray-900">
                           @{lead.username}
                         </p>
                       </div>
                     </div>
                   </td>
-                  <td className="px-5 py-3.5 whitespace-nowrap">
-                    <div className="flex flex-col gap-0.5">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex flex-col gap-1">
                       {lead.email && (
-                        <div className="flex items-center gap-1 text-sm text-ink-muted">
-                          <Mail className="h-3 w-3" />
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <Mail className="h-3.5 w-3.5" />
                           {lead.email}
                         </div>
                       )}
                       {lead.phone && (
-                        <div className="flex items-center gap-1 text-sm text-ink-muted">
-                          <Phone className="h-3 w-3" />
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <Phone className="h-3.5 w-3.5" />
                           {lead.phone}
                         </div>
                       )}
                       {!lead.email && !lead.phone && (
-                        <span className="text-sm text-ink-subtle">No contact info</span>
+                        <span className="text-sm text-gray-400">No contact info</span>
                       )}
                     </div>
                   </td>
-                  <td className="px-5 py-3.5 whitespace-nowrap">
+                  <td className="px-6 py-4 whitespace-nowrap">
                     <span className={cn(styles.badge.base, styles.badge.neutral, 'capitalize')}>
                       {lead.source.replace(/_/g, ' ')}
                     </span>
                   </td>
-                  <td className="px-5 py-3.5 whitespace-nowrap text-sm text-ink-muted">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {formatDate(lead.createdAt)}
                   </td>
-                  <td className="px-5 py-3.5 whitespace-nowrap text-right">
+                  <td className="px-6 py-4 whitespace-nowrap text-right">
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => handleDelete(lead.id)}
                     >
-                      <Trash2 className="h-3.5 w-3.5 text-status-error" />
+                      <Trash2 className="h-4 w-4 text-status-error" />
                     </Button>
                   </td>
                 </tr>

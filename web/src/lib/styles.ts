@@ -2,89 +2,108 @@
 export const styles = {
   // Button variants
   button: {
-    base: 'inline-flex items-center justify-center font-medium transition-colors focus-ring disabled:opacity-40',
+    base: 'inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed',
     variants: {
-      primary: 'bg-ink text-white hover:bg-ink/90',
-      secondary: 'bg-surface-sunken text-ink hover:bg-surface-border',
-      ghost: 'text-ink-muted hover:bg-surface-sunken hover:text-ink',
-      danger: 'bg-status-error text-white hover:bg-status-error/90',
+      primary: 'bg-gradient-to-r from-accent to-accent-secondary text-white hover:opacity-90 focus:ring-accent',
+      secondary: 'bg-gray-100 text-gray-900 hover:bg-gray-200 focus:ring-gray-500',
+      ghost: 'text-gray-600 hover:bg-gray-100 focus:ring-gray-500',
+      danger: 'bg-status-error text-white hover:bg-status-error/90 focus:ring-status-error',
     },
     sizes: {
-      sm: 'h-7 px-2.5 text-xs gap-1.5 rounded',
-      md: 'h-8 px-3 text-sm gap-2 rounded-md',
-      lg: 'h-9 px-4 text-sm gap-2 rounded-md',
+      sm: 'px-3 py-1.5 text-sm',
+      md: 'px-4 py-2 text-sm',
+      lg: 'px-6 py-3 text-base',
     },
   },
 
   // Input styles
   input: {
-    base: 'block w-full rounded-md border border-surface-border px-3 py-2 text-sm text-ink placeholder:text-ink-subtle focus:outline-none focus:border-ink-muted hover:border-ink-subtle/50 disabled:bg-surface-sunken disabled:cursor-not-allowed',
-    error: 'border-status-error focus:border-status-error',
+    base: 'block w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 placeholder-gray-400 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:bg-gray-50 disabled:text-gray-500',
+    error: 'border-status-error focus:border-status-error focus:ring-status-error',
   },
 
   // Card styles
   card: {
-    base: 'rounded-md border border-surface-border',
-    padding: 'p-4',
+    base: 'rounded-xl bg-white shadow-sm border border-gray-100',
+    padding: 'p-6',
   },
 
-  // Navigation
+  // Navigation (dark sidebar)
   nav: {
-    item: 'flex items-center gap-2.5 px-2.5 py-1.5 text-sm rounded-md transition-colors',
-    active: 'bg-surface-sunken text-ink font-medium',
-    inactive: 'text-ink-muted hover:bg-surface-sunken hover:text-ink',
+    item: 'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+    active: 'bg-gray-800 text-white',
+    inactive: 'text-gray-400 hover:bg-gray-800 hover:text-white',
+  },
+
+  // Sidebar
+  sidebar: {
+    base: 'flex h-full w-64 flex-col bg-gray-900',
+    logo: 'flex h-16 items-center px-6',
+    logoIcon: 'h-8 w-8 rounded-lg bg-gradient-to-br from-accent to-accent-secondary',
+    logoText: 'text-lg font-semibold text-white',
+    accountBox: 'rounded-lg bg-gray-800 p-2',
   },
 
   // Status badges
   badge: {
-    base: 'px-1.5 py-0.5 text-xs rounded font-medium',
-    success: 'bg-status-success/10 text-status-success',
-    warning: 'bg-status-warning/10 text-status-warning',
-    error: 'bg-status-error/10 text-status-error',
-    neutral: 'bg-surface-sunken text-ink-muted',
+    base: 'px-2 py-0.5 text-xs rounded-full font-medium',
+    success: 'bg-green-100 text-green-700',
+    warning: 'bg-yellow-100 text-yellow-700',
+    error: 'bg-red-100 text-red-700',
+    neutral: 'bg-gray-100 text-gray-600',
+    info: 'bg-blue-100 text-blue-700',
   },
 
   // Avatar
   avatar: {
-    base: 'rounded-full bg-ink flex items-center justify-center text-white font-medium',
+    base: 'rounded-full bg-gradient-to-br from-accent to-accent-secondary flex items-center justify-center text-white font-semibold',
     sizes: {
-      xs: 'h-5 w-5 text-[10px]',
-      sm: 'h-6 w-6 text-xs',
-      md: 'h-8 w-8 text-sm',
-      lg: 'h-10 w-10 text-base',
+      xs: 'h-5 w-5 text-xs',
+      sm: 'h-8 w-8 text-sm',
+      md: 'h-10 w-10 text-base',
+      lg: 'h-14 w-14 text-lg',
     },
   },
 
   // Typography
   text: {
-    heading: 'font-medium tracking-tight',
-    label: 'text-xs font-medium text-ink-subtle uppercase tracking-wide',
-    body: 'text-sm text-ink',
-    muted: 'text-sm text-ink-muted',
+    heading: 'text-2xl font-bold text-gray-900',
+    subheading: 'text-lg font-semibold text-gray-900',
+    body: 'text-sm text-gray-900',
+    muted: 'text-gray-500',
+    label: 'text-sm font-medium text-gray-700',
   },
 
   // Toggle
   toggle: {
-    base: 'relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/10 focus-visible:ring-offset-1',
-    active: 'bg-ink',
-    inactive: 'bg-surface-border',
-    knob: 'inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform',
-    knobActive: 'translate-x-4',
+    base: 'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+    active: 'bg-accent',
+    inactive: 'bg-gray-200',
+    knob: 'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
+    knobActive: 'translate-x-6',
     knobInactive: 'translate-x-1',
   },
 
   // Modal
   modal: {
     backdrop: 'fixed inset-0 bg-black/50 transition-opacity',
-    container: 'relative w-full bg-surface rounded-lg border border-surface-border',
-    header: 'flex items-center justify-between border-b border-surface-border px-5 py-4',
-    title: 'text-base font-medium text-ink',
-    content: 'px-5 py-4',
+    container: 'relative w-full bg-white rounded-xl shadow-xl',
+    header: 'flex items-center justify-between border-b border-gray-200 px-6 py-4',
+    title: 'text-lg font-semibold text-gray-900',
+    content: 'px-6 py-4',
   },
 
   // Spinner
-  spinner: 'h-4 w-4 animate-spin border-2 border-current border-t-transparent rounded-full',
+  spinner: 'h-8 w-8 animate-spin rounded-full border-4 border-accent border-t-transparent',
+
+  // Info banners
+  banner: {
+    info: 'rounded-xl bg-blue-50 p-6 border border-blue-200',
+    success: 'rounded-xl bg-green-50 p-6 border border-green-200',
+    warning: 'rounded-xl bg-yellow-50 p-6 border border-yellow-200',
+    accent: 'rounded-xl bg-gradient-to-r from-purple-50 to-pink-50 p-4 border border-purple-200',
+  },
 } as const;
 
 // Focus ring utility
-export const focusRing = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/10 focus-visible:ring-offset-1';
+export const focusRing = 'focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2';

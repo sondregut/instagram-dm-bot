@@ -89,11 +89,11 @@ export default function AutomationsPage() {
   if (accounts.length === 0) {
     return (
       <div>
-        <div className="mb-6">
-          <h1 className="text-xl font-semibold text-ink">Automations</h1>
-          <p className="text-ink-muted text-sm">Manage your DM automation triggers</p>
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-gray-900">Automations</h1>
+          <p className="text-gray-500 mt-1">Manage your DM automation triggers</p>
         </div>
-        <div className="rounded-md border border-surface-border bg-surface">
+        <div className="rounded-xl bg-white shadow-sm border border-gray-100">
           <NoAccountPrompt onConnectClick={() => window.location.href = '/settings'} />
         </div>
       </div>
@@ -102,10 +102,10 @@ export default function AutomationsPage() {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-ink">Automations</h1>
-          <p className="text-ink-muted text-sm">Manage your DM automation triggers</p>
+          <h1 className="text-2xl font-bold text-gray-900">Automations</h1>
+          <p className="text-gray-500 mt-1">Manage your DM automation triggers</p>
         </div>
         <Button
           onClick={() => {
@@ -123,40 +123,44 @@ export default function AutomationsPage() {
           <span className={styles.spinner} />
         </div>
       ) : automations?.length === 0 ? (
-        <div className="rounded-md border border-surface-border bg-surface p-12 text-center">
-          <Zap className="mx-auto h-10 w-10 text-ink-subtle" />
-          <h3 className="mt-4 text-base font-medium text-ink">
+        <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-12 text-center">
+          <div className="mx-auto w-16 h-16 rounded-full bg-gradient-to-br from-accent/10 to-accent-secondary/10 flex items-center justify-center">
+            <Zap className="h-8 w-8 text-accent" />
+          </div>
+          <h3 className="mt-4 text-lg font-semibold text-gray-900">
             No automations yet
           </h3>
-          <p className="mt-1 text-ink-muted text-sm">
+          <p className="mt-2 text-gray-500">
             Create your first automation to start engaging with your audience
           </p>
           <Button
-            className="mt-4"
+            className="mt-6"
             onClick={() => {
               setEditingAutomation(null);
               setIsModalOpen(true);
             }}
           >
-            <Plus className="mr-1.5 h-4 w-4" />
+            <Plus className="mr-2 h-4 w-4" />
             Create Automation
           </Button>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {automations?.map((automation) => {
             const Icon = getTypeIcon(automation.type);
             return (
               <div
                 key={automation.id}
-                className="rounded-md border border-surface-border bg-surface p-5"
+                className="rounded-xl bg-white shadow-sm border border-gray-100 p-6"
               >
                 <div className="flex items-start justify-between">
-                  <div className="flex items-start gap-3">
-                    <Icon className="h-5 w-5 text-ink-muted mt-0.5" />
+                  <div className="flex items-start gap-4">
+                    <div className="rounded-lg bg-gradient-to-br from-accent to-accent-secondary p-2.5">
+                      <Icon className="h-5 w-5 text-white" />
+                    </div>
                     <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-medium text-ink">
+                      <div className="flex items-center gap-3">
+                        <h3 className="font-semibold text-gray-900">
                           {automationTypes.find((t) => t.value === automation.type)?.label}
                         </h3>
                         <span
@@ -170,34 +174,34 @@ export default function AutomationsPage() {
                           {automation.isActive ? 'Active' : 'Inactive'}
                         </span>
                       </div>
-                      <p className="mt-1 text-sm text-ink-muted">
+                      <p className="mt-2 text-sm text-gray-500">
                         Keywords:{' '}
                         {automation.trigger.keywords.join(', ') || 'None'}
                       </p>
-                      <p className="mt-0.5 text-sm text-ink-muted">
+                      <p className="mt-1 text-sm text-gray-500">
                         Response: {automation.response.type === 'ai' ? 'AI-Powered' : 'Static Message'}
                       </p>
                       {automation.collectEmail && (
-                        <span className={cn(styles.badge.base, 'mt-2 bg-status-info/10 text-status-info')}>
+                        <span className={cn(styles.badge.base, styles.badge.info, 'mt-3')}>
                           Collects Email
                         </span>
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-2">
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => handleEdit(automation)}
                     >
-                      <Edit2 className="h-3.5 w-3.5" />
+                      <Edit2 className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => handleDelete(automation.id)}
                     >
-                      <Trash2 className="h-3.5 w-3.5 text-status-error" />
+                      <Trash2 className="h-4 w-4 text-status-error" />
                     </Button>
                   </div>
                 </div>
@@ -377,7 +381,7 @@ function AutomationModal({
           />
         </div>
 
-        <div className="flex justify-end gap-3 pt-4 border-t border-surface-border">
+        <div className="flex justify-end gap-3 pt-6 border-t border-gray-200">
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>

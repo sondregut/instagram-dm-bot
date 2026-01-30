@@ -27,19 +27,22 @@ export function StatsCard({
   return (
     <div
       className={cn(
-        'rounded-md border border-surface-border bg-surface p-5',
+        styles.card.base,
+        styles.card.padding,
         className
       )}
     >
       <div className="flex items-start justify-between">
         <div>
-          <div className="flex items-center gap-2">
-            <Icon className="h-4 w-4 text-ink-muted" />
-            <p className="text-sm font-medium text-ink-muted">{title}</p>
+          <div className="flex items-center gap-3">
+            <div className="rounded-lg bg-gradient-to-br from-accent to-accent-secondary p-2">
+              <Icon className="h-5 w-5 text-white" />
+            </div>
+            <p className={styles.text.muted}>{title}</p>
           </div>
-          <p className="mt-2 text-2xl font-semibold text-ink tabular-nums">{value}</p>
+          <p className="mt-3 text-3xl font-bold text-gray-900 tabular-nums">{value}</p>
           {subtitle && (
-            <p className="mt-1 text-sm text-ink-subtle">{subtitle}</p>
+            <p className="mt-1 text-sm text-gray-500">{subtitle}</p>
           )}
           {trend && (
             <p
