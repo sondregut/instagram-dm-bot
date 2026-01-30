@@ -11,14 +11,20 @@ export interface RateLimitResult {
 
 /**
  * Check if we can send a message within rate limits
+ * @param accountId - Optional account ID for per-account rate limiting
  */
-export async function checkRateLimit(): Promise<RateLimitResult> {
+export async function checkRateLimit(accountId?: string): Promise<RateLimitResult> {
   const now = Date.now();
   const windowStart = new Date(now - WINDOW_MS);
 
-  const snapshot = await db.collection('sent_messages')
-    .where('timestamp', '>', windowStart)
-    .get();
+  let query: FirebaseFirestore.Query = db.collection('sent_messages')
+    .where('timestamp', '>', windowStart);
+
+  if (accountId) {
+    query = query.where('accountId', '==', accountId);
+  }
+
+  const snapshot = await query.get();
 
   const count = snapshot.size;
   const remaining = Math.max(0, LIMIT - count);
@@ -33,14 +39,17 @@ export async function checkRateLimit(): Promise<RateLimitResult> {
 
 /**
  * Record a sent message for rate limiting
+ * @param accountId - Optional account ID for per-account tracking
  */
 export async function recordSentMessage(
   recipientId: string,
-  messageType: 'dm' | 'comment_reply' = 'dm'
+  messageType: 'dm' | 'comment_reply' = 'dm',
+  accountId?: string
 ): Promise<void> {
   await db.collection('sent_messages').add({
     recipientId,
     messageType,
+    accountId: accountId || null,
     timestamp: new Date(),
   });
 }
@@ -65,14 +74,15 @@ export async function cleanupRateLimitRecords(): Promise<number> {
 
 /**
  * Get current rate limit status
+ * @param accountId - Optional account ID for per-account status
  */
-export async function getRateLimitStatus(): Promise<{
+export async function getRateLimitStatus(accountId?: string): Promise<{
   used: number;
   limit: number;
   remaining: number;
   windowMinutes: number;
 }> {
-  const result = await checkRateLimit();
+  const result = await checkRateLimit(accountId);
 
   return {
     used: LIMIT - result.remaining,

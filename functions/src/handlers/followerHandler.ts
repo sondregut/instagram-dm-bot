@@ -1,51 +1,99 @@
-import { db, Automation } from '../firebase';
+import { db, Automation, InstagramAccount } from '../firebase';
 import { sendInstagramDM, getFollowers } from '../services/instagram';
 import { generateWelcomeMessage } from '../services/ai';
+import { getAllActiveAccounts, buildSystemPrompt } from '../services/accounts';
 import * as admin from 'firebase-admin';
 
 /**
- * Check for new followers and send welcome DMs
+ * Check for new followers across all active accounts and send welcome DMs
  * This is called by a scheduled Cloud Function
  */
 export async function checkNewFollowers(): Promise<{
+  accountsProcessed: number;
+  totalNewFollowers: number;
+  totalDmsSent: number;
+}> {
+  // Get all active accounts
+  const accounts = await getAllActiveAccounts();
+
+  let totalNewFollowers = 0;
+  let totalDmsSent = 0;
+
+  for (const account of accounts) {
+    try {
+      const result = await checkAccountNewFollowers(account);
+      totalNewFollowers += result.newFollowers;
+      totalDmsSent += result.dmsSent;
+    } catch (error) {
+      console.error(`Error checking followers for account ${account.username}:`, error);
+    }
+  }
+
+  return {
+    accountsProcessed: accounts.length,
+    totalNewFollowers,
+    totalDmsSent,
+  };
+}
+
+/**
+ * Check for new followers on a specific account
+ */
+export async function checkAccountNewFollowers(account: InstagramAccount): Promise<{
   newFollowers: number;
   dmsSent: number;
 }> {
-  // Get Instagram config
-  const configDoc = await db.collection('config').doc('instagram').get();
-  if (!configDoc.exists) {
-    console.log('Instagram config not found');
+  // Skip if auto-welcome is disabled
+  if (!account.settings.autoWelcomeNewFollowers) {
+    console.log(`Auto-welcome disabled for ${account.username}, skipping`);
     return { newFollowers: 0, dmsSent: 0 };
   }
 
-  const config = configDoc.data();
-  const instagramAccountId = config?.instagramAccountId;
-  const lastCheckedFollowers: string[] = config?.lastCheckedFollowers || [];
+  // Get stored follower list for this account
+  const accountDoc = await db.collection('accounts').doc(account.id).get();
+  const accountData = accountDoc.data();
+  const lastCheckedFollowers: string[] = accountData?.lastCheckedFollowers || [];
 
-  if (!instagramAccountId) {
-    console.log('Instagram account ID not configured');
-    return { newFollowers: 0, dmsSent: 0 };
-  }
-
-  // Get new follower automation
+  // Get new follower automation for this account
   const automations = await db.collection('automations')
+    .where('accountId', '==', account.id)
     .where('type', '==', 'new_follower')
     .where('isActive', '==', true)
     .limit(1)
     .get();
 
-  if (automations.empty) {
-    console.log('No active new follower automation');
+  // If no automation but welcomeMessage is set, create a temporary automation-like object
+  let automation: Automation | null = null;
+  if (!automations.empty) {
+    automation = { id: automations.docs[0].id, ...automations.docs[0].data() } as Automation;
+  } else if (account.settings.welcomeMessage) {
+    // Use default welcome message from settings
+    automation = {
+      id: 'default',
+      userId: account.userId,
+      accountId: account.id,
+      type: 'new_follower',
+      trigger: { keywords: [] },
+      response: {
+        type: 'static',
+        staticMessage: account.settings.welcomeMessage,
+      },
+      collectEmail: account.settings.collectEmail,
+      isActive: true,
+      createdAt: admin.firestore.Timestamp.now(),
+    };
+  }
+
+  if (!automation) {
+    console.log(`No new follower automation for ${account.username}`);
     return { newFollowers: 0, dmsSent: 0 };
   }
 
-  const automation = { id: automations.docs[0].id, ...automations.docs[0].data() } as Automation;
-
   // Get current followers (limited to recent 100)
-  const currentFollowers = await getFollowers(instagramAccountId, 100);
+  const currentFollowers = await getFollowers(account, 100);
 
   if (currentFollowers.length === 0) {
-    console.log('Could not fetch followers or no followers');
+    console.log(`Could not fetch followers or no followers for ${account.username}`);
     return { newFollowers: 0, dmsSent: 0 };
   }
 
@@ -55,13 +103,13 @@ export async function checkNewFollowers(): Promise<{
     f => !lastCheckedFollowers.includes(f.id)
   );
 
-  console.log(`Found ${newFollowers.length} new followers`);
+  console.log(`Found ${newFollowers.length} new followers for ${account.username}`);
 
   let dmsSent = 0;
 
   // Send welcome DM to each new follower
   for (const follower of newFollowers) {
-    const sent = await sendWelcomeDM(follower.id, follower.username, automation);
+    const sent = await sendWelcomeDM(follower.id, follower.username, automation, account);
     if (sent) {
       dmsSent++;
     }
@@ -70,8 +118,8 @@ export async function checkNewFollowers(): Promise<{
     await new Promise(resolve => setTimeout(resolve, 500));
   }
 
-  // Update last checked followers list
-  await db.collection('config').doc('instagram').update({
+  // Update last checked followers list for this account
+  await db.collection('accounts').doc(account.id).update({
     lastCheckedFollowers: currentFollowerIds,
     lastFollowerCheckAt: admin.firestore.Timestamp.now(),
   });
@@ -88,16 +136,18 @@ export async function checkNewFollowers(): Promise<{
 async function sendWelcomeDM(
   userId: string,
   username: string,
-  automation: Automation
+  automation: Automation,
+  account: InstagramAccount
 ): Promise<boolean> {
-  // Check if we've already welcomed this user
+  // Check if we've already welcomed this user for this account
   const existingWelcome = await db.collection('follower_welcomes')
     .where('userId', '==', userId)
+    .where('accountId', '==', account.id)
     .limit(1)
     .get();
 
   if (!existingWelcome.empty) {
-    console.log(`Already welcomed ${username}, skipping`);
+    console.log(`Already welcomed ${username} for ${account.username}, skipping`);
     return false;
   }
 
@@ -113,22 +163,23 @@ async function sendWelcomeDM(
     message = `Hey ${username}! Thanks for following! Let me know if you have any questions.`;
   }
 
-  const sent = await sendInstagramDM(userId, message);
+  const sent = await sendInstagramDM(userId, message, account);
 
   if (sent) {
     // Log the welcome
     await db.collection('follower_welcomes').add({
       userId,
       username,
+      accountId: account.id,
       automationId: automation.id,
       messageSent: message,
       createdAt: admin.firestore.Timestamp.now(),
     });
 
     // Create conversation record
-    await createFollowerConversation(userId, username, automation, message);
+    await createFollowerConversation(userId, username, automation, message, account);
 
-    console.log(`Welcome DM sent to ${username}`);
+    console.log(`Welcome DM sent to ${username} from ${account.username}`);
     return true;
   }
 
@@ -142,12 +193,15 @@ async function createFollowerConversation(
   userId: string,
   username: string,
   automation: Automation,
-  welcomeMessage: string
+  welcomeMessage: string,
+  account: InstagramAccount
 ): Promise<void> {
   const conversationRef = db.collection('conversations').doc();
 
   await conversationRef.set({
     id: conversationRef.id,
+    userId: account.userId,
+    accountId: account.id,
     instagramUserId: userId,
     username,
     currentAutomationId: automation.id,
@@ -167,14 +221,20 @@ async function createFollowerConversation(
 }
 
 /**
- * Get follower automation stats
+ * Get follower automation stats for an account
  */
-export async function getFollowerStats(): Promise<{
+export async function getFollowerStats(accountId?: string): Promise<{
   totalWelcomed: number;
   last24Hours: number;
   last7Days: number;
 }> {
-  const allWelcomes = await db.collection('follower_welcomes').get();
+  let query: FirebaseFirestore.Query = db.collection('follower_welcomes');
+
+  if (accountId) {
+    query = query.where('accountId', '==', accountId);
+  }
+
+  const allWelcomes = await query.get();
   const welcomes = allWelcomes.docs.map(doc => doc.data());
 
   const now = Date.now();
@@ -193,9 +253,19 @@ export async function getFollowerStats(): Promise<{
  */
 export async function manualWelcomeUser(
   userId: string,
-  username: string
+  username: string,
+  accountId: string
 ): Promise<boolean> {
+  const accountDoc = await db.collection('accounts').doc(accountId).get();
+  if (!accountDoc.exists) {
+    console.log('Account not found');
+    return false;
+  }
+
+  const account = { id: accountDoc.id, ...accountDoc.data() } as InstagramAccount;
+
   const automations = await db.collection('automations')
+    .where('accountId', '==', accountId)
     .where('type', '==', 'new_follower')
     .where('isActive', '==', true)
     .limit(1)
@@ -208,5 +278,5 @@ export async function manualWelcomeUser(
 
   const automation = { id: automations.docs[0].id, ...automations.docs[0].data() } as Automation;
 
-  return await sendWelcomeDM(userId, username, automation);
+  return await sendWelcomeDM(userId, username, automation, account);
 }

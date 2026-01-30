@@ -35,21 +35,10 @@ export function onAuthChange(callback: (user: User | null) => void) {
   return onAuthStateChanged(auth, callback);
 }
 
-// Cloud Functions callable wrappers
-export const cloudFunctions = {
-  getDashboardStats: httpsCallable<void, DashboardStats>(functions, 'getDashboardStats'),
-  getLeads: httpsCallable<GetLeadsParams, GetLeadsResult>(functions, 'getLeadsApi'),
-  exportLeads: httpsCallable<ExportLeadsParams, { csv: string }>(functions, 'exportLeads'),
-  deleteLead: httpsCallable<{ leadId: string }, { success: boolean }>(functions, 'deleteLeadApi'),
-  getAutomations: httpsCallable<void, Automation[]>(functions, 'getAutomations'),
-  saveAutomation: httpsCallable<AutomationInput, { id: string; success: boolean }>(functions, 'saveAutomation'),
-  deleteAutomation: httpsCallable<{ id: string }, { success: boolean }>(functions, 'deleteAutomation'),
-  getConversations: httpsCallable<GetConversationsParams, GetConversationsResult>(functions, 'getConversations'),
-  getConversation: httpsCallable<{ id: string }, Conversation>(functions, 'getConversation'),
-  saveInstagramConfig: httpsCallable<InstagramConfigInput, { success: boolean }>(functions, 'saveInstagramConfig'),
-};
+// ============================================
+// TYPES
+// ============================================
 
-// Types
 export interface DashboardStats {
   leads: {
     total: number;
@@ -76,19 +65,27 @@ export interface DashboardStats {
   };
 }
 
+export type LeadSource = 'comment_to_dm' | 'keyword_dm' | 'new_follower' | 'story_reply' | 'story_mention' | 'flow' | 'manual';
+
 export interface Lead {
   id: string;
+  userId: string;
+  accountId: string;
   instagramUserId: string;
   username: string;
   email?: string;
   phone?: string;
   name?: string;
-  source: 'comment_to_dm' | 'keyword_dm' | 'new_follower' | 'manual';
+  source: LeadSource;
   automationId?: string;
+  flowId?: string;
+  tags?: string[];
+  notes?: string;
   createdAt: { _seconds: number };
 }
 
 export interface GetLeadsParams {
+  accountId?: string;
   source?: string;
   hasEmail?: boolean;
   hasPhone?: boolean;
@@ -102,17 +99,23 @@ export interface GetLeadsResult {
 }
 
 export interface ExportLeadsParams {
+  accountId?: string;
   source?: string;
   startDate?: string;
   endDate?: string;
 }
 
+export type AutomationType = 'comment_to_dm' | 'keyword_dm' | 'new_follower' | 'story_reply' | 'story_mention';
+
 export interface Automation {
   id: string;
-  type: 'comment_to_dm' | 'keyword_dm' | 'new_follower';
+  userId: string;
+  accountId: string;
+  type: AutomationType;
   trigger: {
     keywords: string[];
     postIds?: string[];
+    storyIds?: string[];
   };
   response: {
     type: 'static' | 'ai';
@@ -126,10 +129,12 @@ export interface Automation {
 
 export interface AutomationInput {
   id?: string;
-  type: 'comment_to_dm' | 'keyword_dm' | 'new_follower';
+  accountId: string;
+  type: AutomationType;
   trigger: {
     keywords: string[];
     postIds?: string[];
+    storyIds?: string[];
   };
   response: {
     type: 'static' | 'ai';
@@ -148,6 +153,8 @@ export interface ConversationMessage {
 
 export interface Conversation {
   id: string;
+  userId: string;
+  accountId: string;
   instagramUserId: string;
   username: string;
   currentAutomationId: string | null;
@@ -163,6 +170,7 @@ export interface Conversation {
 }
 
 export interface GetConversationsParams {
+  accountId?: string;
   state?: string;
   limit?: number;
   startAfter?: string;
@@ -178,5 +186,187 @@ export interface InstagramConfigInput {
   pageId: string;
   instagramAccountId: string;
 }
+
+// ============================================
+// INSTAGRAM ACCOUNT TYPES
+// ============================================
+
+export interface AIPersonality {
+  name: string;
+  description: string;
+  systemPrompt: string;
+  tone: 'friendly' | 'professional' | 'casual' | 'enthusiastic';
+  goals: string[];
+  customInstructions?: string;
+  exampleConversations?: { userMessage: string; assistantResponse: string }[];
+  forbiddenTopics?: string[];
+  handoffKeywords?: string[];
+}
+
+export interface AccountSettings {
+  maxResponseLength: number;
+  collectEmail: boolean;
+  collectPhone: boolean;
+  autoWelcomeNewFollowers: boolean;
+  welcomeMessage?: string;
+  businessHoursOnly: boolean;
+  businessHours?: {
+    timezone: string;
+    start: string;
+    end: string;
+    days: number[];
+  };
+  outOfHoursMessage?: string;
+  emailPrompt?: string;
+  phonePrompt?: string;
+  thankYouMessage?: string;
+  notifyOnNewLead: boolean;
+  notifyOnHandoff: boolean;
+  notificationEmail?: string;
+}
+
+export interface InstagramAccount {
+  id: string;
+  username: string;
+  instagramAccountId: string;
+  pageName?: string;
+  aiPersonality: AIPersonality;
+  settings: AccountSettings;
+  connectionStatus: 'connected' | 'expired' | 'error';
+  tokenExpiresAt?: string;
+  createdAt?: string;
+}
+
+// ============================================
+// KNOWLEDGE BASE TYPES
+// ============================================
+
+export interface KnowledgeFAQ {
+  id: string;
+  question: string;
+  answer: string;
+  keywords?: string[];
+}
+
+export interface KnowledgeWebsite {
+  id: string;
+  url: string;
+  title?: string;
+}
+
+export interface KnowledgeBase {
+  id: string;
+  name: string;
+  description?: string;
+  faqs: KnowledgeFAQ[];
+  websites: KnowledgeWebsite[];
+  status: 'processing' | 'ready' | 'error';
+}
+
+// ============================================
+// USER TYPES
+// ============================================
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  displayName?: string;
+  subscription: 'free' | 'starter' | 'pro' | 'enterprise';
+}
+
+// ============================================
+// CLOUD FUNCTIONS CALLABLE WRAPPERS
+// ============================================
+
+export const cloudFunctions = {
+  // Dashboard & Stats
+  getDashboardStats: httpsCallable<{ accountId?: string }, DashboardStats>(functions, 'getDashboardStats'),
+
+  // Leads
+  getLeads: httpsCallable<GetLeadsParams, GetLeadsResult>(functions, 'getLeadsApi'),
+  exportLeads: httpsCallable<ExportLeadsParams, { csv: string }>(functions, 'exportLeads'),
+  deleteLead: httpsCallable<{ leadId: string }, { success: boolean }>(functions, 'deleteLeadApi'),
+
+  // Automations
+  getAutomations: httpsCallable<{ accountId?: string }, Automation[]>(functions, 'getAutomations'),
+  saveAutomation: httpsCallable<AutomationInput, { id: string; success: boolean }>(functions, 'saveAutomation'),
+  deleteAutomation: httpsCallable<{ id: string }, { success: boolean }>(functions, 'deleteAutomation'),
+
+  // Conversations
+  getConversations: httpsCallable<GetConversationsParams, GetConversationsResult>(functions, 'getConversations'),
+  getConversation: httpsCallable<{ id: string }, Conversation>(functions, 'getConversation'),
+
+  // Legacy Instagram Config (deprecated)
+  saveInstagramConfig: httpsCallable<InstagramConfigInput, { success: boolean }>(functions, 'saveInstagramConfig'),
+
+  // ============================================
+  // OAUTH & ACCOUNTS
+  // ============================================
+  getInstagramOAuthUrl: httpsCallable<{ redirectUrl?: string }, { url: string; state: string }>(functions, 'getInstagramOAuthUrl'),
+  getUserAccounts: httpsCallable<void, InstagramAccount[]>(functions, 'getUserAccounts'),
+  disconnectInstagramAccount: httpsCallable<{ accountId: string }, { success: boolean }>(functions, 'disconnectInstagramAccount'),
+  updateAccountSettings: httpsCallable<{
+    accountId: string;
+    aiPersonality?: Partial<AIPersonality>;
+    settings?: Partial<AccountSettings>;
+  }, { success: boolean }>(functions, 'updateAccountSettings'),
+
+  // ============================================
+  // KNOWLEDGE BASE
+  // ============================================
+  getKnowledgeBase: httpsCallable<{ accountId: string }, KnowledgeBase>(functions, 'getKnowledgeBaseApi'),
+  addFAQ: httpsCallable<{
+    knowledgeBaseId: string;
+    question: string;
+    answer: string;
+    keywords?: string[];
+  }, { success: boolean; faq: KnowledgeFAQ }>(functions, 'addFAQ'),
+  removeFAQ: httpsCallable<{ knowledgeBaseId: string; faqId: string }, { success: boolean }>(functions, 'removeFAQ'),
+  updateFAQs: httpsCallable<{
+    knowledgeBaseId: string;
+    faqs: KnowledgeFAQ[];
+  }, { success: boolean; faqs: KnowledgeFAQ[] }>(functions, 'updateFAQs'),
+  addWebsite: httpsCallable<{
+    knowledgeBaseId: string;
+    url: string;
+    title?: string;
+  }, { success: boolean; website: KnowledgeWebsite }>(functions, 'addWebsite'),
+  removeWebsite: httpsCallable<{ knowledgeBaseId: string; websiteId: string }, { success: boolean }>(functions, 'removeWebsite'),
+  deleteKnowledgeBase: httpsCallable<{ knowledgeBaseId: string }, { success: boolean }>(functions, 'deleteKnowledgeBase'),
+  generateAIPersonalityFromWebsite: httpsCallable<
+    { url: string },
+    {
+      name: string;
+      description: string;
+      systemPrompt: string;
+      goals: string[];
+      customInstructions: string;
+      tone: 'friendly' | 'professional' | 'casual' | 'enthusiastic';
+    }
+  >(functions, 'generateAIPersonalityFromWebsite'),
+
+  // ============================================
+  // USER PROFILE
+  // ============================================
+  getUserProfile: httpsCallable<void, UserProfile>(functions, 'getUserProfile'),
+  saveUserProfile: httpsCallable<{ displayName?: string }, { success: boolean }>(functions, 'saveUserProfile'),
+
+  // ============================================
+  // FLOWS
+  // ============================================
+  getFlows: httpsCallable<{ accountId?: string }, import('./flowTypes').Flow[]>(functions, 'getFlows'),
+  getFlow: httpsCallable<{ id: string }, import('./flowTypes').Flow>(functions, 'getFlow'),
+  createFlow: httpsCallable<import('./flowTypes').FlowInput, { id: string; success: boolean }>(functions, 'createFlow'),
+  updateFlow: httpsCallable<
+    { id: string } & Partial<import('./flowTypes').FlowInput>,
+    { id: string; success: boolean }
+  >(functions, 'updateFlow'),
+  deleteFlow: httpsCallable<{ id: string }, { success: boolean }>(functions, 'deleteFlow'),
+  toggleFlowActive: httpsCallable<{ id: string; isActive: boolean }, { success: boolean; isActive: boolean }>(functions, 'toggleFlowActive'),
+  getFlowStats: httpsCallable<
+    { flowId?: string; accountId?: string },
+    import('./flowTypes').FlowStats
+  >(functions, 'getFlowStats'),
+};
 
 export { auth, db, functions };

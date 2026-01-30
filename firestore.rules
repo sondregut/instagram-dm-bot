@@ -6,25 +6,103 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Automations - only authenticated users
+    // Helper function to check if user owns the resource
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Helper function to check if user owns the resource (from data)
+    function isResourceOwner() {
+      return isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    // Helper function for new documents
+    function isCreatingOwn() {
+      return isAuthenticated() && request.resource.data.userId == request.auth.uid;
+    }
+
+    // ============================================
+    // USER PROFILE
+    // ============================================
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId);
+      allow delete: if false; // Users cannot delete themselves
+    }
+
+    // ============================================
+    // INSTAGRAM ACCOUNTS
+    // ============================================
+    match /accounts/{accountId} {
+      allow read: if isResourceOwner();
+      allow create: if isCreatingOwn();
+      allow update: if isResourceOwner();
+      allow delete: if isResourceOwner();
+    }
+
+    // ============================================
+    // AUTOMATIONS - User isolation
+    // ============================================
     match /automations/{automationId} {
-      allow read, write: if isAuthenticated();
+      allow read: if isResourceOwner();
+      allow create: if isCreatingOwn();
+      allow update: if isResourceOwner();
+      allow delete: if isResourceOwner();
     }
 
-    // Conversations - only authenticated users
+    // ============================================
+    // CONVERSATIONS - User isolation
+    // ============================================
     match /conversations/{conversationId} {
-      allow read, write: if isAuthenticated();
+      allow read: if isResourceOwner();
+      allow create: if isCreatingOwn();
+      allow update: if isResourceOwner();
+      allow delete: if isResourceOwner();
     }
 
-    // Leads - only authenticated users
+    // ============================================
+    // LEADS - User isolation
+    // ============================================
     match /leads/{leadId} {
-      allow read, write: if isAuthenticated();
+      allow read: if isResourceOwner();
+      allow create: if isCreatingOwn();
+      allow update: if isResourceOwner();
+      allow delete: if isResourceOwner();
     }
 
-    // Config - only authenticated users (sensitive data)
-    match /config/{configId} {
-      allow read, write: if isAuthenticated();
+    // ============================================
+    // KNOWLEDGE BASE - User isolation
+    // ============================================
+    match /knowledge_base/{kbId} {
+      allow read: if isResourceOwner();
+      allow create: if isCreatingOwn();
+      allow update: if isResourceOwner();
+      allow delete: if isResourceOwner();
     }
+
+    // ============================================
+    // OAUTH STATE - Temporary tokens
+    // ============================================
+    match /oauth_state/{stateId} {
+      allow read: if isResourceOwner();
+      allow create: if isCreatingOwn();
+      allow delete: if isResourceOwner();
+      allow update: if false; // OAuth states should not be updated
+    }
+
+    // ============================================
+    // LEGACY CONFIG - Deprecated, read-only for migration
+    // ============================================
+    match /config/{configId} {
+      allow read: if isAuthenticated();
+      allow write: if false; // No longer used for new accounts
+    }
+
+    // ============================================
+    // CLOUD FUNCTIONS ONLY COLLECTIONS
+    // These are managed by Cloud Functions and not directly accessible
+    // ============================================
 
     // Rate limiting records - Cloud Functions only
     match /sent_messages/{messageId} {
@@ -36,15 +114,15 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Comment DM log - Cloud Functions only
+    // Comment DM log - Read only for users
     match /comment_dm_log/{logId} {
-      allow read: if isAuthenticated();
+      allow read: if isResourceOwner();
       allow write: if false;
     }
 
-    // Follower welcomes - Cloud Functions only
+    // Follower welcomes - Read only for users
     match /follower_welcomes/{welcomeId} {
-      allow read: if isAuthenticated();
+      allow read: if isResourceOwner();
       allow write: if false;
     }
   }

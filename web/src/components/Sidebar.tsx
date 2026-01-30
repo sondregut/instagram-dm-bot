@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   Zap,
+  GitBranch,
   MessageSquare,
   Users,
   Settings,
@@ -18,6 +19,7 @@ import { useAccount } from '@/components/AccountSelector';
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Automations', href: '/automations', icon: Zap },
+  { name: 'Flows', href: '/flows', icon: GitBranch },
   { name: 'Conversations', href: '/conversations', icon: MessageSquare },
   { name: 'Leads', href: '/leads', icon: Users },
   { name: 'Settings', href: '/settings', icon: Settings },

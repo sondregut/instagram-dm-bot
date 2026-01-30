@@ -8,7 +8,8 @@ const AUTH_TAG_LENGTH = 16;
  * Get encryption key from environment
  */
 function getEncryptionKey(): Buffer {
-  const key = process.env.ENCRYPTION_KEY;
+  const functions = require('firebase-functions');
+  const key = process.env.ENCRYPTION_KEY || functions.config().encryption?.key;
   if (!key) {
     throw new Error('ENCRYPTION_KEY environment variable is not set');
   }

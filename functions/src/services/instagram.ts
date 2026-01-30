@@ -1,10 +1,14 @@
-import { db, InstagramConfig } from '../firebase';
+import { db, InstagramAccount, InstagramConfig } from '../firebase';
 import { checkRateLimit, recordSentMessage } from '../utils/rateLimiter';
 import { truncateMessage } from '../utils/validators';
 import { decrypt } from '../utils/encryption';
+import { getAccountByInstagramId, getAccountAccessToken } from './accounts';
 
-const GRAPH_API_VERSION = 'v18.0';
-const GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
+const GRAPH_API_VERSION = 'v21.0';
+// Instagram Business Login tokens use graph.instagram.com
+const INSTAGRAM_GRAPH_API_BASE = `https://graph.instagram.com/${GRAPH_API_VERSION}`;
+// Facebook Login tokens use graph.facebook.com (legacy)
+const FACEBOOK_GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 
 interface InstagramAPIResponse {
   success: boolean;
@@ -13,17 +17,16 @@ interface InstagramAPIResponse {
 }
 
 /**
- * Get Instagram configuration from Firestore
+ * Get Instagram configuration from Firestore (Legacy - for backwards compatibility)
  */
-async function getConfig(): Promise<InstagramConfig> {
+async function getLegacyConfig(): Promise<InstagramConfig | null> {
   const configDoc = await db.collection('config').doc('instagram').get();
   if (!configDoc.exists) {
-    throw new Error('Instagram configuration not found');
+    return null;
   }
   const config = configDoc.data() as InstagramConfig;
 
   // Only decrypt if token looks encrypted (contains colons from our format)
-  // If saved unencrypted, use as-is
   if (config.accessToken && config.accessToken.includes(':')) {
     try {
       config.accessToken = decrypt(config.accessToken);
@@ -36,22 +39,39 @@ async function getConfig(): Promise<InstagramConfig> {
 }
 
 /**
- * Make authenticated request to Instagram Graph API
+ * Get access token for an account (handles decryption)
+ */
+async function getAccessToken(account: InstagramAccount): Promise<string> {
+  // Decrypt token if it looks encrypted
+  if (account.accessToken && account.accessToken.includes(':')) {
+    try {
+      return decrypt(account.accessToken);
+    } catch (error) {
+      console.log('Token not encrypted or decryption failed, using as-is');
+      return account.accessToken;
+    }
+  }
+  return account.accessToken;
+}
+
+/**
+ * Make authenticated request to Instagram/Facebook Graph API
  */
 async function graphRequest(
   endpoint: string,
+  accessToken: string,
   method: 'GET' | 'POST' = 'GET',
-  body?: object
+  body?: object,
+  useInstagramApi: boolean = true  // Default to Instagram API for new tokens
 ): Promise<InstagramAPIResponse> {
-  const config = await getConfig();
-
-  const url = `${GRAPH_API_BASE}${endpoint}`;
+  const baseUrl = useInstagramApi ? INSTAGRAM_GRAPH_API_BASE : FACEBOOK_GRAPH_API_BASE;
+  const url = `${baseUrl}${endpoint}`;
   console.log(`[GraphAPI] ${method} ${url}`);
 
   const options: RequestInit = {
     method,
     headers: {
-      'Authorization': `Bearer ${config.accessToken}`,
+      'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
     },
   };
@@ -87,42 +107,70 @@ async function graphRequest(
 }
 
 /**
- * Send a DM to an Instagram user
+ * Send a DM to an Instagram user (Multi-tenant version)
+ * @param recipientId - Instagram user ID to send message to
+ * @param message - Message content
+ * @param account - Instagram account to send from (optional for backwards compatibility)
  */
 export async function sendInstagramDM(
   recipientId: string,
-  message: string
+  message: string,
+  account?: InstagramAccount
 ): Promise<boolean> {
   console.log(`[Instagram] Attempting to send DM to ${recipientId}`);
 
-  // Check rate limit
-  const rateLimit = await checkRateLimit();
+  // Check rate limit (global or per-account in future)
+  const rateLimit = await checkRateLimit(account?.id);
   if (!rateLimit.allowed) {
     console.log(`Rate limit reached. Remaining: ${rateLimit.remaining}, resets at: ${rateLimit.resetAt}`);
     // Queue for later delivery
-    await queueMessage(recipientId, message);
+    await queueMessage(recipientId, message, account?.id, account?.userId);
     return false;
   }
 
   try {
-    const config = await getConfig();
-    console.log(`[Instagram] Got config - pageId: ${config.pageId}, instagramAccountId: ${config.instagramAccountId}`);
-    console.log(`[Instagram] Access token starts with: ${config.accessToken?.substring(0, 20)}...`);
+    let accessToken: string;
+    let instagramAccountId: string;
+
+    if (account) {
+      // Multi-tenant: use provided account
+      accessToken = await getAccessToken(account);
+      instagramAccountId = account.instagramAccountId;
+      console.log(`[Instagram] Using account: ${account.username} (${account.id})`);
+    } else {
+      // Legacy: use global config
+      const config = await getLegacyConfig();
+      if (!config) {
+        console.error('[Instagram] No account or config provided');
+        return false;
+      }
+      accessToken = config.accessToken;
+      instagramAccountId = config.instagramAccountId;
+      console.log('[Instagram] Using legacy config');
+    }
+
+    console.log(`[Instagram] Access token starts with: ${accessToken?.substring(0, 20)}...`);
 
     const truncatedMessage = truncateMessage(message);
 
-    // Try using /me/messages endpoint (standard for Instagram Messaging API)
+    // Detect token type: Instagram tokens start with "IGAA" or "IG", Facebook tokens start with "EA" or other
+    const isInstagramToken = accessToken?.startsWith('IGAA') || accessToken?.startsWith('IG');
+    console.log(`[Instagram] Token type: ${isInstagramToken ? 'Instagram Business Login' : 'Facebook Login'}`);
+
+    // Try using /me/messages endpoint with appropriate API
     const result = await graphRequest(
       `/me/messages`,
+      accessToken,
       'POST',
       {
         recipient: { id: recipientId },
         message: { text: truncatedMessage },
-      }
+      },
+      isInstagramToken  // Use Instagram API for Instagram tokens
     );
 
     if (result.success) {
-      await recordSentMessage(recipientId, 'dm');
+      await recordSentMessage(recipientId, 'dm', account?.id);
       console.log(`[Instagram] DM sent successfully to ${recipientId}`);
       return true;
     }
@@ -132,21 +180,42 @@ export async function sendInstagramDM(
     // If /me/messages failed, try with Instagram account ID
     console.log(`[Instagram] Retrying with instagramAccountId endpoint...`);
     const retryResult = await graphRequest(
-      `/${config.instagramAccountId}/messages`,
+      `/${instagramAccountId}/messages`,
+      accessToken,
       'POST',
       {
         recipient: { id: recipientId },
         message: { text: truncatedMessage },
-      }
+      },
+      isInstagramToken
     );
 
     if (retryResult.success) {
-      await recordSentMessage(recipientId, 'dm');
+      await recordSentMessage(recipientId, 'dm', account?.id);
       console.log(`[Instagram] DM sent successfully via instagramAccountId endpoint`);
       return true;
     }
 
-    console.error(`[Instagram] Retry also failed:`, retryResult.error);
+    // Last resort: try the other API (fallback)
+    console.log(`[Instagram] Trying fallback with ${isInstagramToken ? 'Facebook' : 'Instagram'} API...`);
+    const fallbackResult = await graphRequest(
+      `/${instagramAccountId}/messages`,
+      accessToken,
+      'POST',
+      {
+        recipient: { id: recipientId },
+        message: { text: truncatedMessage },
+      },
+      !isInstagramToken  // Try opposite API
+    );
+
+    if (fallbackResult.success) {
+      await recordSentMessage(recipientId, 'dm', account?.id);
+      console.log(`[Instagram] DM sent successfully via fallback API`);
+      return true;
+    }
+
+    console.error(`[Instagram] All attempts failed:`, fallbackResult.error);
     return false;
   } catch (error) {
     console.error(`[Instagram] Exception sending DM:`, error);
@@ -160,18 +229,31 @@ export async function sendInstagramDM(
 export async function sendQuickReplyDM(
   recipientId: string,
   message: string,
-  quickReplies: { title: string; payload: string }[]
+  quickReplies: { title: string; payload: string }[],
+  account?: InstagramAccount
 ): Promise<boolean> {
-  const rateLimit = await checkRateLimit();
+  const rateLimit = await checkRateLimit(account?.id);
   if (!rateLimit.allowed) {
-    await queueMessage(recipientId, message);
+    await queueMessage(recipientId, message, account?.id, account?.userId);
     return false;
   }
 
-  const config = await getConfig();
+  let accessToken: string;
+  let pageId: string;
+
+  if (account) {
+    accessToken = await getAccessToken(account);
+    pageId = account.pageId;
+  } else {
+    const config = await getLegacyConfig();
+    if (!config) return false;
+    accessToken = config.accessToken;
+    pageId = config.pageId;
+  }
 
   const result = await graphRequest(
-    `/${config.pageId}/messages`,
+    `/${pageId}/messages`,
+    accessToken,
     'POST',
     {
       recipient: { id: recipientId },
@@ -187,7 +269,7 @@ export async function sendQuickReplyDM(
   );
 
   if (result.success) {
-    await recordSentMessage(recipientId, 'dm');
+    await recordSentMessage(recipientId, 'dm', account?.id);
     return true;
   }
 
@@ -197,19 +279,58 @@ export async function sendQuickReplyDM(
 /**
  * Get Instagram user profile
  */
-export async function getInstagramUser(userId: string): Promise<{
+export async function getInstagramUser(
+  userId: string,
+  account?: InstagramAccount
+): Promise<{
   id: string;
   username: string;
   name?: string;
 } | null> {
+  let accessToken: string;
+
+  if (account) {
+    accessToken = await getAccessToken(account);
+  } else {
+    const config = await getLegacyConfig();
+    if (!config) return null;
+    accessToken = config.accessToken;
+  }
+
+  // Detect token type
+  const isInstagramToken = accessToken?.startsWith('IGAA') || accessToken?.startsWith('IG');
+
+  // Try Instagram API first for Instagram tokens
   const result = await graphRequest(
-    `/${userId}?fields=id,username,name`
+    `/${userId}?fields=id,username,name`,
+    accessToken,
+    'GET',
+    undefined,
+    isInstagramToken
   );
 
   if (result.success && result.data) {
+    console.log(`[Instagram] Got user info for ${userId}: @${result.data.username}`);
     return result.data;
   }
 
+  console.log(`[Instagram] Failed to get user info for ${userId}: ${result.error}`);
+
+  // Try the other API as fallback
+  const fallbackResult = await graphRequest(
+    `/${userId}?fields=id,username,name`,
+    accessToken,
+    'GET',
+    undefined,
+    !isInstagramToken
+  );
+
+  if (fallbackResult.success && fallbackResult.data) {
+    console.log(`[Instagram] Got user info via fallback for ${userId}: @${fallbackResult.data.username}`);
+    return fallbackResult.data;
+  }
+
+  console.log(`[Instagram] All attempts to get user info failed for ${userId}`);
   return null;
 }
 
@@ -217,11 +338,14 @@ export async function getInstagramUser(userId: string): Promise<{
  * Get followers list (limited)
  */
 export async function getFollowers(
-  accountId: string,
+  account: InstagramAccount,
   limit: number = 100
 ): Promise<{ id: string; username: string }[]> {
+  const accessToken = await getAccessToken(account);
+
   const result = await graphRequest(
-    `/${accountId}/followers?limit=${limit}&fields=id,username`
+    `/${account.instagramAccountId}/followers?limit=${limit}&fields=id,username`,
+    accessToken
   );
 
   if (result.success && result.data?.data) {
@@ -234,9 +358,23 @@ export async function getFollowers(
 /**
  * Get comments on a media post
  */
-export async function getMediaComments(mediaId: string): Promise<any[]> {
+export async function getMediaComments(
+  mediaId: string,
+  account?: InstagramAccount
+): Promise<any[]> {
+  let accessToken: string;
+
+  if (account) {
+    accessToken = await getAccessToken(account);
+  } else {
+    const config = await getLegacyConfig();
+    if (!config) return [];
+    accessToken = config.accessToken;
+  }
+
   const result = await graphRequest(
-    `/${mediaId}/comments?fields=id,text,from,timestamp`
+    `/${mediaId}/comments?fields=id,text,from,timestamp`,
+    accessToken
   );
 
   if (result.success && result.data?.data) {
@@ -251,10 +389,22 @@ export async function getMediaComments(mediaId: string): Promise<any[]> {
  */
 export async function replyToComment(
   commentId: string,
-  message: string
+  message: string,
+  account?: InstagramAccount
 ): Promise<boolean> {
+  let accessToken: string;
+
+  if (account) {
+    accessToken = await getAccessToken(account);
+  } else {
+    const config = await getLegacyConfig();
+    if (!config) return false;
+    accessToken = config.accessToken;
+  }
+
   const result = await graphRequest(
     `/${commentId}/replies`,
+    accessToken,
     'POST',
     { message: truncateMessage(message, 300) }
   );
@@ -265,44 +415,63 @@ export async function replyToComment(
 /**
  * Queue message for later delivery (when rate limited)
  */
-async function queueMessage(recipientId: string, message: string): Promise<void> {
+async function queueMessage(
+  recipientId: string,
+  message: string,
+  accountId?: string,
+  userId?: string
+): Promise<void> {
   await db.collection('message_queue').add({
     recipientId,
     message,
+    accountId: accountId || null,
+    userId: userId || null,
     status: 'pending',
     createdAt: new Date(),
     attempts: 0,
   });
-  console.log(`Message queued for ${recipientId}`);
+  console.log(`Message queued for ${recipientId} (account: ${accountId || 'legacy'})`);
 }
 
 /**
- * Process queued messages (called by scheduled function)
+ * Process queued messages for a specific account or all accounts
  */
-export async function processMessageQueue(): Promise<number> {
-  const rateLimit = await checkRateLimit();
+export async function processMessageQueue(accountId?: string): Promise<number> {
+  const rateLimit = await checkRateLimit(accountId);
   if (!rateLimit.allowed) {
     return 0;
   }
 
-  const queue = await db.collection('message_queue')
+  let query: FirebaseFirestore.Query = db.collection('message_queue')
     .where('status', '==', 'pending')
     .orderBy('createdAt', 'asc')
-    .limit(Math.min(rateLimit.remaining, 50))
-    .get();
+    .limit(Math.min(rateLimit.remaining, 50));
+
+  if (accountId) {
+    query = query.where('accountId', '==', accountId);
+  }
+
+  const queue = await query.get();
 
   let processed = 0;
 
   for (const doc of queue.docs) {
-    const { recipientId, message, attempts } = doc.data();
+    const { recipientId, message, accountId: msgAccountId, attempts } = doc.data();
 
     // Check rate limit before each send
-    const currentLimit = await checkRateLimit();
+    const currentLimit = await checkRateLimit(msgAccountId);
     if (!currentLimit.allowed) {
       break;
     }
 
-    const sent = await sendInstagramDM(recipientId, message);
+    // Get account if specified
+    let account: InstagramAccount | undefined;
+    if (msgAccountId) {
+      const acc = await getAccountByInstagramId(msgAccountId);
+      if (acc) account = acc;
+    }
+
+    const sent = await sendInstagramDM(recipientId, message, account);
 
     if (sent) {
       await doc.ref.update({ status: 'sent', sentAt: new Date() });
@@ -318,9 +487,16 @@ export async function processMessageQueue(): Promise<number> {
 }
 
 /**
- * Refresh access token before expiry
+ * Refresh access token for all accounts or a specific one
  */
-export async function refreshAccessToken(): Promise<boolean> {
+export async function refreshAccessToken(accountId?: string): Promise<boolean> {
+  if (accountId) {
+    // Refresh specific account
+    const { refreshAccountToken } = await import('../auth/instagram-oauth');
+    return await refreshAccountToken(accountId);
+  }
+
+  // Legacy: refresh global config token
   const configDoc = await db.collection('config').doc('instagram').get();
   if (!configDoc.exists) {
     return false;
@@ -339,7 +515,7 @@ export async function refreshAccessToken(): Promise<boolean> {
 
   try {
     const response = await fetch(
-      `${GRAPH_API_BASE}/oauth/access_token?` +
+      `${FACEBOOK_GRAPH_API_BASE}/oauth/access_token?` +
       `grant_type=fb_exchange_token&` +
       `client_id=${appId}&` +
       `client_secret=${appSecret}&` +
@@ -368,6 +544,25 @@ export async function refreshAccessToken(): Promise<boolean> {
     return false;
   } catch (error) {
     console.error('Token refresh error:', error);
+    return false;
+  }
+}
+
+/**
+ * Verify account connection is still valid
+ */
+export async function verifyAccountConnection(account: InstagramAccount): Promise<boolean> {
+  try {
+    const accessToken = await getAccessToken(account);
+
+    const result = await graphRequest(
+      `/me?fields=id,name`,
+      accessToken
+    );
+
+    return result.success;
+  } catch (error) {
+    console.error('Error verifying account connection:', error);
     return false;
   }
 }

@@ -2,22 +2,25 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, Edit2, Zap, MessageSquare, UserPlus } from 'lucide-react';
-import { cloudFunctions, Automation, AutomationInput } from '@/lib/firebase';
+import { Plus, Trash2, Edit2, Zap, MessageSquare, UserPlus, Image, AtSign } from 'lucide-react';
+import { cloudFunctions, Automation, AutomationInput, AutomationType } from '@/lib/firebase';
 import { Button } from '@/components/Button';
 import { Modal } from '@/components/Modal';
 import { Input } from '@/components/Input';
 import { Textarea } from '@/components/Textarea';
 import { Select } from '@/components/Select';
 import { Toggle } from '@/components/Toggle';
-import { formatDate, cn } from '@/lib/utils';
+import { PostSelector } from '@/components/PostSelector';
+import { cn } from '@/lib/utils';
 import { useAccount, NoAccountPrompt } from '@/components/AccountSelector';
 import { styles } from '@/lib/styles';
 
-const automationTypes = [
-  { value: 'comment_to_dm', label: 'Comment to DM', icon: MessageSquare },
-  { value: 'keyword_dm', label: 'Keyword DM Response', icon: Zap },
-  { value: 'new_follower', label: 'New Follower Welcome', icon: UserPlus },
+const automationTypes: { value: AutomationType; label: string; icon: typeof Zap; description: string }[] = [
+  { value: 'comment_to_dm', label: 'Comment to DM', icon: MessageSquare, description: 'Send DM when someone comments with keywords' },
+  { value: 'keyword_dm', label: 'Keyword DM Response', icon: Zap, description: 'Reply when someone DMs with keywords' },
+  { value: 'new_follower', label: 'New Follower Welcome', icon: UserPlus, description: 'Welcome new followers automatically' },
+  { value: 'story_reply', label: 'Story Reply', icon: Image, description: 'Respond when someone replies to your story' },
+  { value: 'story_mention', label: 'Story Mention', icon: AtSign, description: 'Respond when mentioned in someone\'s story' },
 ];
 
 const responseTypes = [
@@ -76,6 +79,11 @@ export default function AutomationsPage() {
   const getTypeIcon = (type: string) => {
     const found = automationTypes.find((t) => t.value === type);
     return found?.icon || Zap;
+  };
+
+  const getTypeLabel = (type: string) => {
+    const found = automationTypes.find((t) => t.value === type);
+    return found?.label || type;
   };
 
   if (accountsLoading) {
@@ -161,7 +169,7 @@ export default function AutomationsPage() {
                     <div>
                       <div className="flex items-center gap-3">
                         <h3 className="font-semibold text-gray-900">
-                          {automationTypes.find((t) => t.value === automation.type)?.label}
+                          {getTypeLabel(automation.type)}
                         </h3>
                         <span
                           className={cn(
@@ -174,10 +182,17 @@ export default function AutomationsPage() {
                           {automation.isActive ? 'Active' : 'Inactive'}
                         </span>
                       </div>
-                      <p className="mt-2 text-sm text-gray-500">
-                        Keywords:{' '}
-                        {automation.trigger.keywords.join(', ') || 'None'}
-                      </p>
+                      {automation.trigger.keywords.length > 0 && (
+                        <p className="mt-2 text-sm text-gray-500">
+                          Keywords:{' '}
+                          {automation.trigger.keywords.join(', ')}
+                        </p>
+                      )}
+                      {automation.trigger.postIds && automation.trigger.postIds.length > 0 && (
+                        <p className="mt-1 text-sm text-gray-500">
+                          Limited to {automation.trigger.postIds.length} specific post{automation.trigger.postIds.length > 1 ? 's' : ''}
+                        </p>
+                      )}
                       <p className="mt-1 text-sm text-gray-500">
                         Response: {automation.response.type === 'ai' ? 'AI-Powered' : 'Static Message'}
                       </p>
@@ -253,6 +268,7 @@ function AutomationModal({
     trigger: {
       keywords: automation?.trigger.keywords || [],
       postIds: automation?.trigger.postIds || [],
+      storyIds: automation?.trigger.storyIds || [],
     },
     response: {
       type: automation?.response.type || 'static',
@@ -300,6 +316,10 @@ function AutomationModal({
     });
   };
 
+  // Determine which fields to show based on automation type
+  const showKeywords = ['comment_to_dm', 'keyword_dm', 'story_reply'].includes(formData.type);
+  const showPostSelector = formData.type === 'comment_to_dm';
+
   return (
     <Modal
       isOpen={isOpen}
@@ -312,17 +332,38 @@ function AutomationModal({
           label="Automation Type"
           value={formData.type}
           onChange={(e) =>
-            setFormData({ ...formData, type: e.target.value as any })
+            setFormData({ ...formData, type: e.target.value as AutomationType })
           }
-          options={automationTypes}
+          options={automationTypes.map(t => ({ value: t.value, label: t.label }))}
         />
 
-        <Input
-          label="Trigger Keywords (comma-separated)"
-          value={keywordsInput}
-          onChange={(e) => setKeywordsInput(e.target.value)}
-          placeholder="FREE, GUIDE, LINK"
-        />
+        {/* Type description */}
+        <p className="text-sm text-gray-500 -mt-3">
+          {automationTypes.find(t => t.value === formData.type)?.description}
+        </p>
+
+        {showKeywords && (
+          <Input
+            label={formData.type === 'story_reply' ? 'Trigger Keywords (optional, comma-separated)' : 'Trigger Keywords (comma-separated)'}
+            value={keywordsInput}
+            onChange={(e) => setKeywordsInput(e.target.value)}
+            placeholder="FREE, GUIDE, LINK"
+          />
+        )}
+
+        {showPostSelector && (
+          <PostSelector
+            selectedPostIds={formData.trigger.postIds || []}
+            onChange={(postIds) =>
+              setFormData({
+                ...formData,
+                trigger: { ...formData.trigger, postIds },
+              })
+            }
+            posts={[]} // TODO: Fetch actual posts from Instagram API
+            isLoading={false}
+          />
+        )}
 
         <Select
           label="Response Type"
@@ -330,7 +371,7 @@ function AutomationModal({
           onChange={(e) =>
             setFormData({
               ...formData,
-              response: { ...formData.response, type: e.target.value as any },
+              response: { ...formData.response, type: e.target.value as 'static' | 'ai' },
             })
           }
           options={responseTypes}

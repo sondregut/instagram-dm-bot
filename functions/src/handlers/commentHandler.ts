@@ -1,6 +1,7 @@
-import { db, Automation } from '../firebase';
+import { db, Automation, InstagramAccount } from '../firebase';
 import { sendInstagramDM, getInstagramUser } from '../services/instagram';
 import { generateAIResponse } from '../services/ai';
+import { buildSystemPrompt } from '../services/accounts';
 import { containsKeyword, sanitizeInput } from '../utils/validators';
 import * as admin from 'firebase-admin';
 
@@ -20,17 +21,24 @@ export interface InstagramCommentEvent {
 
 /**
  * Handle incoming comment webhook events
+ * @param event - The Instagram comment event
+ * @param account - The Instagram account that received the comment
  */
-export async function handleComment(event: InstagramCommentEvent): Promise<void> {
+export async function handleComment(
+  event: InstagramCommentEvent,
+  account: InstagramAccount
+): Promise<void> {
   const commentText = sanitizeInput(event.text);
   const userId = event.from.id;
   const username = event.from.username;
   const mediaId = event.media.id;
 
   console.log(`Comment from ${username} on media ${mediaId}: ${commentText.substring(0, 50)}...`);
+  console.log(`Account: ${account.username} (${account.id})`);
 
-  // Check for comment-to-DM automations
+  // Check for comment-to-DM automations for this account
   const automations = await db.collection('automations')
+    .where('accountId', '==', account.id)
     .where('type', '==', 'comment_to_dm')
     .where('isActive', '==', true)
     .get();
@@ -50,7 +58,7 @@ export async function handleComment(event: InstagramCommentEvent): Promise<void>
 
     if (matchedKeyword) {
       console.log(`Keyword "${matchedKeyword}" matched in comment, triggering DM to ${username}`);
-      await triggerCommentToDM(userId, username, automation, commentText, mediaId);
+      await triggerCommentToDM(userId, username, automation, commentText, mediaId, account);
       return;
     }
   }
@@ -66,11 +74,13 @@ async function triggerCommentToDM(
   username: string,
   automation: Automation,
   commentText: string,
-  mediaId: string
+  mediaId: string,
+  account: InstagramAccount
 ): Promise<void> {
   // Check if we've already DMed this user recently for this automation
   const recentDMs = await db.collection('comment_dm_log')
     .where('userId', '==', userId)
+    .where('accountId', '==', account.id)
     .where('automationId', '==', automation.id)
     .where('createdAt', '>', new Date(Date.now() - 24 * 60 * 60 * 1000))
     .limit(1)
@@ -87,9 +97,11 @@ async function triggerCommentToDM(
     // Use static message, but personalize with username
     message = automation.response.staticMessage.replace('{username}', username);
   } else if (automation.response.type === 'ai' && automation.response.aiPrompt) {
-    // Generate AI response
+    // Generate AI response with account personality
+    const systemPrompt = automation.response.aiPrompt + '\n\n' + buildSystemPrompt(account);
+
     message = await generateAIResponse(
-      automation.response.aiPrompt,
+      systemPrompt,
       [{
         role: 'user',
         content: `User @${username} commented: "${commentText}"`,
@@ -102,13 +114,14 @@ async function triggerCommentToDM(
   }
 
   // Send the DM
-  const sent = await sendInstagramDM(userId, message);
+  const sent = await sendInstagramDM(userId, message, account);
 
   if (sent) {
     // Log this DM to prevent spam
     await db.collection('comment_dm_log').add({
       userId,
       username,
+      accountId: account.id,
       automationId: automation.id,
       mediaId,
       commentText: commentText.substring(0, 200),
@@ -117,7 +130,7 @@ async function triggerCommentToDM(
     });
 
     // Create or update conversation
-    await createConversationFromComment(userId, username, automation, commentText, message);
+    await createConversationFromComment(userId, username, automation, commentText, message, account);
 
     console.log(`Comment-to-DM sent to ${username}`);
   }
@@ -131,12 +144,15 @@ async function createConversationFromComment(
   username: string,
   automation: Automation,
   commentText: string,
-  sentMessage: string
+  sentMessage: string,
+  account: InstagramAccount
 ): Promise<void> {
   const conversationRef = db.collection('conversations').doc();
 
   await conversationRef.set({
     id: conversationRef.id,
+    userId: account.userId,
+    accountId: account.id,
     instagramUserId: userId,
     username,
     currentAutomationId: automation.id,
@@ -161,15 +177,19 @@ async function createConversationFromComment(
 }
 
 /**
- * Get comment automation stats
+ * Get comment automation stats for an account
  */
-export async function getCommentAutomationStats(automationId?: string): Promise<{
+export async function getCommentAutomationStats(
+  accountId: string,
+  automationId?: string
+): Promise<{
   total: number;
   last24Hours: number;
   last7Days: number;
   uniqueUsers: number;
 }> {
-  let query: FirebaseFirestore.Query = db.collection('comment_dm_log');
+  let query: FirebaseFirestore.Query = db.collection('comment_dm_log')
+    .where('accountId', '==', accountId);
 
   if (automationId) {
     query = query.where('automationId', '==', automationId);

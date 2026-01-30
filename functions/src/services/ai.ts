@@ -1,5 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { SecretManagerServiceClient } from '@google-cloud/secret-manager';
+import { InstagramAccount, KnowledgeBase } from '../firebase';
+import { getKnowledgeBaseForAccount, buildKnowledgeContext } from './knowledge';
 
 let anthropic: Anthropic | null = null;
 let apiKey: string | null = null;
@@ -47,6 +49,7 @@ export interface ChatMessage {
 
 /**
  * Generate AI response for DM conversation using Claude Sonnet
+ * Enhanced to support knowledge base context for RAG
  */
 export async function generateAIResponse(
   systemPrompt: string,
@@ -54,11 +57,15 @@ export async function generateAIResponse(
   options: {
     maxTokens?: number;
     temperature?: number;
+    accountId?: string;  // For knowledge base lookup
+    userMessage?: string; // For knowledge base query
   } = {}
 ): Promise<string> {
   const {
     maxTokens = 300,
     temperature = 0.7,
+    accountId,
+    userMessage,
   } = options;
 
   // Get Anthropic client
@@ -68,11 +75,28 @@ export async function generateAIResponse(
     return "Hey! Thanks for reaching out. I'll get back to you soon!";
   }
 
+  // Build enhanced system prompt with knowledge base context
+  let enhancedPrompt = systemPrompt;
+
+  if (accountId && userMessage) {
+    try {
+      const kb = await getKnowledgeBaseForAccount(accountId);
+      if (kb && kb.status === 'ready') {
+        const kbContext = buildKnowledgeContext(kb, userMessage);
+        if (kbContext) {
+          enhancedPrompt += kbContext;
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching knowledge base:', error);
+    }
+  }
+
   try {
     const response = await client.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: maxTokens,
-      system: systemPrompt,
+      system: enhancedPrompt,
       messages: conversationHistory.map(m => ({
         role: m.role === 'system' ? 'user' : m.role,
         content: m.content,

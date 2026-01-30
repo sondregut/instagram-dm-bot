@@ -1,10 +1,21 @@
 import * as functions from 'firebase-functions';
 import { handleMessage, InstagramMessageEvent } from '../handlers/messageHandler';
 import { handleComment, InstagramCommentEvent } from '../handlers/commentHandler';
+import {
+  handleStoryMention,
+  handleStoryReply,
+  isStoryMentionEvent,
+  isStoryReplyEvent,
+  InstagramStoryMentionEvent,
+  InstagramStoryReplyEvent,
+} from '../handlers/storyHandler';
+import { getAccountByInstagramId, updateAccountWebhookTimestamp } from '../services/accounts';
+import { InstagramAccount } from '../firebase';
 
 /**
  * Instagram Webhook Handler
  * Receives events from Meta's webhook system
+ * Routes events to the correct account in multi-tenant setup
  */
 export const instagramWebhook = functions.https.onRequest(async (req, res) => {
   // Webhook verification (GET request from Meta)
@@ -60,16 +71,49 @@ export const instagramWebhook = functions.https.onRequest(async (req, res) => {
 
 /**
  * Process webhook events from Meta
+ * Routes events to the correct account based on recipient ID
  */
 async function processWebhookEvents(entry: any[]): Promise<void> {
   for (const event of entry) {
-    // Handle direct messages
+    // The event.id is the Instagram Account ID that received the event
+    const instagramAccountId = event.id;
+
+    // Look up which account this belongs to
+    const account = await getAccountByInstagramId(instagramAccountId);
+
+    if (!account) {
+      console.log(`[Webhook] Unknown Instagram account: ${instagramAccountId}`);
+      // Could be a legacy account or unregistered - skip
+      continue;
+    }
+
+    // Update last webhook timestamp
+    await updateAccountWebhookTimestamp(account.id);
+
+    console.log(`[Webhook] Processing event for account: ${account.username} (${account.id})`);
+
+    // Handle direct messages and story events
     if (event.messaging && Array.isArray(event.messaging)) {
       for (const messagingEvent of event.messaging) {
         try {
-          await handleMessage(messagingEvent as InstagramMessageEvent);
+          // Check for story mention events
+          if (isStoryMentionEvent(messagingEvent)) {
+            console.log('[Webhook] Processing story mention event');
+            await handleStoryMention(messagingEvent as InstagramStoryMentionEvent, account);
+            continue;
+          }
+
+          // Check for story reply events (message with story context)
+          if (isStoryReplyEvent(messagingEvent)) {
+            console.log('[Webhook] Processing story reply event');
+            await handleStoryReply(messagingEvent as InstagramStoryReplyEvent, account);
+            continue;
+          }
+
+          // Regular message handling
+          await handleMessage(messagingEvent as InstagramMessageEvent, account);
         } catch (error) {
-          console.error('Error handling message:', error);
+          console.error('Error handling message/story event:', error);
         }
       }
     }
@@ -80,12 +124,25 @@ async function processWebhookEvents(entry: any[]): Promise<void> {
         try {
           switch (change.field) {
             case 'comments':
-              await handleComment(change.value as InstagramCommentEvent);
+              await handleComment(change.value as InstagramCommentEvent, account);
               break;
 
             case 'mentions':
-              console.log('Story mention received:', change.value);
-              // Future: Handle story mentions
+              // Handle story mentions from changes field (alternative format)
+              console.log('[Webhook] Story mention from changes:', change.value);
+              if (change.value?.media_type === 'STORY' || change.value?.story_id) {
+                // Convert to our event format and handle
+                const mentionEvent: InstagramStoryMentionEvent = {
+                  sender: { id: change.value.user_id || change.value.from?.id },
+                  recipient: { id: account.instagramAccountId },
+                  timestamp: Date.now(),
+                  story_mention: {
+                    id: change.value.story_id || change.value.media_id,
+                    link: change.value.permalink || '',
+                  },
+                };
+                await handleStoryMention(mentionEvent, account);
+              }
               break;
 
             default:
