@@ -4,6 +4,8 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/Sidebar';
 import { useAuth } from '@/hooks/useAuth';
+import { AccountProvider } from '@/components/AccountSelector';
+import { styles } from '@/lib/styles';
 
 export default function DashboardLayout({
   children,
@@ -21,8 +23,8 @@ export default function DashboardLayout({
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-instagram-pink border-t-transparent" />
+      <div className="flex h-screen items-center justify-center bg-surface">
+        <span className={styles.spinner} />
       </div>
     );
   }
@@ -32,11 +34,13 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <Sidebar />
-      <main className="flex-1 overflow-auto">
-        <div className="p-8">{children}</div>
-      </main>
-    </div>
+    <AccountProvider>
+      <div className="flex h-screen bg-surface">
+        <Sidebar />
+        <main className="flex-1 overflow-auto">
+          <div className="p-6">{children}</div>
+        </main>
+      </div>
+    </AccountProvider>
   );
 }

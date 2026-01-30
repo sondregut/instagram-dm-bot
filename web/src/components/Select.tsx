@@ -1,6 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { styles } from '@/lib/styles';
 import { forwardRef, SelectHTMLAttributes } from 'react';
 
 interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
@@ -16,7 +17,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
         {label && (
           <label
             htmlFor={id}
-            className="block text-sm font-medium text-gray-700 mb-1"
+            className="block text-sm font-medium text-ink-muted mb-1"
           >
             {label}
           </label>
@@ -25,10 +26,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
           ref={ref}
           id={id}
           className={cn(
-            'block w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900',
-            'focus:border-instagram-pink focus:outline-none focus:ring-1 focus:ring-instagram-pink',
-            'disabled:bg-gray-50 disabled:text-gray-500',
-            error && 'border-red-500 focus:border-red-500 focus:ring-red-500',
+            styles.input.base,
+            error && styles.input.error,
             className
           )}
           {...props}
@@ -39,7 +38,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             </option>
           ))}
         </select>
-        {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
+        {error && <p className="mt-1 text-sm text-status-error">{error}</p>}
       </div>
     );
   }

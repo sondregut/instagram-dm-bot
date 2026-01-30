@@ -10,7 +10,9 @@ import { Input } from '@/components/Input';
 import { Textarea } from '@/components/Textarea';
 import { Select } from '@/components/Select';
 import { Toggle } from '@/components/Toggle';
-import { formatDate } from '@/lib/utils';
+import { formatDate, cn } from '@/lib/utils';
+import { useAccount, NoAccountPrompt } from '@/components/AccountSelector';
+import { styles } from '@/lib/styles';
 
 const automationTypes = [
   { value: 'comment_to_dm', label: 'Comment to DM', icon: MessageSquare },
@@ -25,15 +27,19 @@ const responseTypes = [
 
 export default function AutomationsPage() {
   const queryClient = useQueryClient();
+  const { selectedAccount, accounts, isLoading: accountsLoading } = useAccount();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingAutomation, setEditingAutomation] = useState<Automation | null>(null);
 
   const { data: automations, isLoading } = useQuery({
-    queryKey: ['automations'],
+    queryKey: ['automations', selectedAccount?.id],
     queryFn: async () => {
-      const result = await cloudFunctions.getAutomations();
+      const result = await cloudFunctions.getAutomations({
+        accountId: selectedAccount?.id,
+      });
       return result.data;
     },
+    enabled: !!selectedAccount,
   });
 
   const saveMutation = useMutation({
@@ -41,7 +47,7 @@ export default function AutomationsPage() {
       return cloudFunctions.saveAutomation(data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['automations'] });
+      queryClient.invalidateQueries({ queryKey: ['automations', selectedAccount?.id] });
       setIsModalOpen(false);
       setEditingAutomation(null);
     },
@@ -52,7 +58,7 @@ export default function AutomationsPage() {
       return cloudFunctions.deleteAutomation({ id });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['automations'] });
+      queryClient.invalidateQueries({ queryKey: ['automations', selectedAccount?.id] });
     },
   });
 
@@ -72,12 +78,34 @@ export default function AutomationsPage() {
     return found?.icon || Zap;
   };
 
+  if (accountsLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <span className={styles.spinner} />
+      </div>
+    );
+  }
+
+  if (accounts.length === 0) {
+    return (
+      <div>
+        <div className="mb-6">
+          <h1 className="text-xl font-semibold text-ink">Automations</h1>
+          <p className="text-ink-muted text-sm">Manage your DM automation triggers</p>
+        </div>
+        <div className="rounded-md border border-surface-border bg-surface">
+          <NoAccountPrompt onConnectClick={() => window.location.href = '/settings'} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
-      <div className="mb-8 flex items-center justify-between">
+      <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Automations</h1>
-          <p className="text-gray-500">Manage your DM automation triggers</p>
+          <h1 className="text-xl font-semibold text-ink">Automations</h1>
+          <p className="text-ink-muted text-sm">Manage your DM automation triggers</p>
         </div>
         <Button
           onClick={() => {
@@ -85,22 +113,22 @@ export default function AutomationsPage() {
             setIsModalOpen(true);
           }}
         >
-          <Plus className="mr-2 h-4 w-4" />
+          <Plus className="mr-1.5 h-4 w-4" />
           New Automation
         </Button>
       </div>
 
       {isLoading ? (
         <div className="flex items-center justify-center h-64">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-instagram-pink border-t-transparent" />
+          <span className={styles.spinner} />
         </div>
       ) : automations?.length === 0 ? (
-        <div className="rounded-xl bg-white p-12 text-center shadow-sm border border-gray-100">
-          <Zap className="mx-auto h-12 w-12 text-gray-300" />
-          <h3 className="mt-4 text-lg font-medium text-gray-900">
+        <div className="rounded-md border border-surface-border bg-surface p-12 text-center">
+          <Zap className="mx-auto h-10 w-10 text-ink-subtle" />
+          <h3 className="mt-4 text-base font-medium text-ink">
             No automations yet
           </h3>
-          <p className="mt-2 text-gray-500">
+          <p className="mt-1 text-ink-muted text-sm">
             Create your first automation to start engaging with your audience
           </p>
           <Button
@@ -110,67 +138,66 @@ export default function AutomationsPage() {
               setIsModalOpen(true);
             }}
           >
-            <Plus className="mr-2 h-4 w-4" />
+            <Plus className="mr-1.5 h-4 w-4" />
             Create Automation
           </Button>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {automations?.map((automation) => {
             const Icon = getTypeIcon(automation.type);
             return (
               <div
                 key={automation.id}
-                className="rounded-xl bg-white p-6 shadow-sm border border-gray-100"
+                className="rounded-md border border-surface-border bg-surface p-5"
               >
                 <div className="flex items-start justify-between">
-                  <div className="flex items-start gap-4">
-                    <div className="rounded-lg bg-gray-100 p-3">
-                      <Icon className="h-6 w-6 text-gray-600" />
-                    </div>
+                  <div className="flex items-start gap-3">
+                    <Icon className="h-5 w-5 text-ink-muted mt-0.5" />
                     <div>
                       <div className="flex items-center gap-2">
-                        <h3 className="font-semibold text-gray-900">
+                        <h3 className="font-medium text-ink">
                           {automationTypes.find((t) => t.value === automation.type)?.label}
                         </h3>
                         <span
-                          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                          className={cn(
+                            styles.badge.base,
                             automation.isActive
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-gray-100 text-gray-600'
-                          }`}
+                              ? styles.badge.success
+                              : styles.badge.neutral
+                          )}
                         >
                           {automation.isActive ? 'Active' : 'Inactive'}
                         </span>
                       </div>
-                      <p className="mt-1 text-sm text-gray-500">
+                      <p className="mt-1 text-sm text-ink-muted">
                         Keywords:{' '}
                         {automation.trigger.keywords.join(', ') || 'None'}
                       </p>
-                      <p className="mt-1 text-sm text-gray-500">
+                      <p className="mt-0.5 text-sm text-ink-muted">
                         Response: {automation.response.type === 'ai' ? 'AI-Powered' : 'Static Message'}
                       </p>
                       {automation.collectEmail && (
-                        <span className="mt-2 inline-block rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                        <span className={cn(styles.badge.base, 'mt-2 bg-status-info/10 text-status-info')}>
                           Collects Email
                         </span>
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => handleEdit(automation)}
                     >
-                      <Edit2 className="h-4 w-4" />
+                      <Edit2 className="h-3.5 w-3.5" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => handleDelete(automation.id)}
                     >
-                      <Trash2 className="h-4 w-4 text-red-500" />
+                      <Trash2 className="h-3.5 w-3.5 text-status-error" />
                     </Button>
                   </div>
                 </div>
@@ -181,16 +208,19 @@ export default function AutomationsPage() {
       )}
 
       {/* Create/Edit Modal */}
-      <AutomationModal
-        isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          setEditingAutomation(null);
-        }}
-        automation={editingAutomation}
-        onSave={(data) => saveMutation.mutate(data)}
-        isSaving={saveMutation.isPending}
-      />
+      {selectedAccount && (
+        <AutomationModal
+          isOpen={isModalOpen}
+          onClose={() => {
+            setIsModalOpen(false);
+            setEditingAutomation(null);
+          }}
+          automation={editingAutomation}
+          accountId={selectedAccount.id}
+          onSave={(data) => saveMutation.mutate(data)}
+          isSaving={saveMutation.isPending}
+        />
+      )}
     </div>
   );
 }
@@ -199,6 +229,7 @@ interface AutomationModalProps {
   isOpen: boolean;
   onClose: () => void;
   automation: Automation | null;
+  accountId: string;
   onSave: (data: AutomationInput) => void;
   isSaving: boolean;
 }
@@ -207,11 +238,13 @@ function AutomationModal({
   isOpen,
   onClose,
   automation,
+  accountId,
   onSave,
   isSaving,
 }: AutomationModalProps) {
   const [formData, setFormData] = useState<AutomationInput>(() => ({
     id: automation?.id,
+    accountId,
     type: automation?.type || 'keyword_dm',
     trigger: {
       keywords: automation?.trigger.keywords || [],
@@ -235,6 +268,7 @@ function AutomationModal({
     if (automation) {
       setFormData({
         id: automation.id,
+        accountId,
         type: automation.type,
         trigger: automation.trigger,
         response: automation.response,
@@ -254,6 +288,7 @@ function AutomationModal({
 
     onSave({
       ...formData,
+      accountId,
       trigger: {
         ...formData.trigger,
         keywords,
@@ -268,7 +303,7 @@ function AutomationModal({
       title={automation ? 'Edit Automation' : 'Create Automation'}
       size="lg"
     >
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-5">
         <Select
           label="Automation Type"
           value={formData.type}
@@ -342,7 +377,7 @@ function AutomationModal({
           />
         </div>
 
-        <div className="flex justify-end gap-3 pt-4 border-t">
+        <div className="flex justify-end gap-3 pt-4 border-t border-surface-border">
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>

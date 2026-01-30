@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
+import { styles } from '@/lib/styles';
 
 export default function LoginPage() {
   const { signIn, signUp, isAuthenticated, loading } = useAuth();
@@ -51,26 +52,25 @@ export default function LoginPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-instagram-pink border-t-transparent" />
+      <div className="flex h-screen items-center justify-center bg-surface">
+        <span className={styles.spinner} />
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="mx-auto h-12 w-12 rounded-xl bg-gradient-to-br from-instagram-pink to-instagram-purple" />
-          <h1 className="mt-4 text-2xl font-bold text-gray-900">
-            Instagram DM Bot
+    <div className="flex min-h-screen items-center justify-center bg-surface px-4">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-6">
+          <h1 className="text-xl font-semibold text-ink tracking-tight">
+            DM Bot
           </h1>
-          <p className="mt-2 text-gray-500">
+          <p className="mt-1 text-ink-muted text-sm">
             {isSignUp ? 'Create your admin account' : 'Sign in to your dashboard'}
           </p>
         </div>
 
-        <div className="rounded-xl bg-white p-8 shadow-sm border border-gray-100">
+        <div className="rounded-md border border-surface-border bg-surface p-6">
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input
               label="Email"
@@ -92,7 +92,7 @@ export default function LoginPage() {
             />
 
             {error && (
-              <p className="text-sm text-red-600">{error}</p>
+              <p className="text-sm text-status-error">{error}</p>
             )}
 
             <Button
@@ -104,14 +104,14 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <div className="mt-6 text-center">
+          <div className="mt-5 text-center">
             <button
               type="button"
               onClick={() => {
                 setIsSignUp(!isSignUp);
                 setError('');
               }}
-              className="text-sm text-instagram-pink hover:underline"
+              className="text-sm text-ink-muted hover:text-ink transition-colors"
             >
               {isSignUp
                 ? 'Already have an account? Sign in'
@@ -120,7 +120,7 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <p className="mt-4 text-center text-sm text-gray-500">
+        <p className="mt-4 text-center text-xs text-ink-subtle">
           This is your admin dashboard login, not Instagram login.
           <br />
           You'll connect Instagram in Settings after logging in.

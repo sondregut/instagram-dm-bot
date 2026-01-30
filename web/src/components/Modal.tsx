@@ -3,6 +3,7 @@
 import { useEffect, useCallback, ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { styles } from '@/lib/styles';
 
 interface ModalProps {
   isOpen: boolean;
@@ -51,7 +52,7 @@ export function Modal({
     <div className="fixed inset-0 z-50 overflow-y-auto">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/50 transition-opacity"
+        className={styles.modal.backdrop}
         onClick={onClose}
       />
 
@@ -59,17 +60,17 @@ export function Modal({
       <div className="flex min-h-full items-center justify-center p-4">
         <div
           className={cn(
-            'relative w-full bg-white rounded-xl shadow-xl',
+            styles.modal.container,
             sizes[size]
           )}
         >
           {/* Header */}
           {title && (
-            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-              <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+            <div className={styles.modal.header}>
+              <h2 className={styles.modal.title}>{title}</h2>
               <button
                 onClick={onClose}
-                className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-500"
+                className="rounded-md p-1 text-ink-muted hover:bg-surface-sunken hover:text-ink"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -77,7 +78,7 @@ export function Modal({
           )}
 
           {/* Content */}
-          <div className="px-6 py-4">{children}</div>
+          <div className={styles.modal.content}>{children}</div>
         </div>
       </div>
     </div>

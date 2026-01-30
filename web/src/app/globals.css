@@ -3,26 +3,45 @@
 @tailwind utilities;
 
 :root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 249, 250, 251;
-  --background-end-rgb: 255, 255, 255;
-}
+  /* Ink (text) colors */
+  --ink: 10 10 10;
+  --ink-muted: 82 82 82;
+  --ink-subtle: 163 163 163;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 17, 24, 39;
-    --background-end-rgb: 31, 41, 55;
-  }
+  /* Surface (background) colors */
+  --surface: 255 255 255;
+  --surface-raised: 250 250 250;
+  --surface-sunken: 245 245 245;
+  --surface-border: 229 229 229;
+
+  /* Accent */
+  --accent: 13 148 136;
+  --accent-hover: 15 118 110;
+  --accent-muted: 204 251 241;
+
+  /* Status */
+  --status-success: 34 197 94;
+  --status-warning: 234 179 8;
+  --status-error: 239 68 68;
+  --status-info: 59 130 246;
+
+  /* Spacing scale */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+
+  /* Border radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
 }
 
 body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-    to bottom,
-    rgb(var(--background-start-rgb)),
-    rgb(var(--background-end-rgb))
-  );
+  color: rgb(var(--ink));
+  background: rgb(var(--surface));
 }
 
 @layer utilities {
@@ -37,14 +56,14 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: rgb(var(--surface-sunken));
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
-  border-radius: 4px;
+  background: rgb(var(--surface-border));
+  border-radius: var(--radius-sm);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #a1a1a1;
+  background: rgb(var(--ink-subtle));
 }
