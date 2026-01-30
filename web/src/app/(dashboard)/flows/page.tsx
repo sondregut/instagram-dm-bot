@@ -49,11 +49,26 @@ export default function FlowsPage() {
             position: { x: 250, y: 50 },
             data: {
               triggerType: 'keyword',
-              keywords: [],
+              keywords: ['hello'],
+            },
+          },
+          {
+            id: 'message_1',
+            type: 'message',
+            position: { x: 250, y: 200 },
+            data: {
+              messageType: 'text',
+              text: 'Thanks for reaching out!',
             },
           },
         ],
-        edges: [],
+        edges: [
+          {
+            id: 'edge_1',
+            source: 'trigger_1',
+            target: 'message_1',
+          },
+        ],
         isActive: false,
       });
     },
