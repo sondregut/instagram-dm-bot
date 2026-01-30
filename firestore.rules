@@ -1,0 +1,51 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Automations - only authenticated users
+    match /automations/{automationId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Conversations - only authenticated users
+    match /conversations/{conversationId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Leads - only authenticated users
+    match /leads/{leadId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Config - only authenticated users (sensitive data)
+    match /config/{configId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Rate limiting records - Cloud Functions only
+    match /sent_messages/{messageId} {
+      allow read, write: if false; // Cloud Functions bypass rules
+    }
+
+    // Message queue - Cloud Functions only
+    match /message_queue/{messageId} {
+      allow read, write: if false;
+    }
+
+    // Comment DM log - Cloud Functions only
+    match /comment_dm_log/{logId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    // Follower welcomes - Cloud Functions only
+    match /follower_welcomes/{welcomeId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+  }
+}
