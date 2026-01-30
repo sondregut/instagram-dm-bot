@@ -18,7 +18,7 @@ import {
   useReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { ArrowLeft, Save, Play, Settings } from 'lucide-react';
+import { ArrowLeft, Save, Settings, Check } from 'lucide-react';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
 import { cloudFunctions } from '@/lib/firebase';
@@ -46,10 +46,11 @@ interface FlowEditorClientProps {
   flowId: string | null;
 }
 
-export default function FlowEditorClient({ flowId }: FlowEditorClientProps) {
+function FlowEditorInner({ flowId }: FlowEditorClientProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { selectedAccount } = useAccount();
+  const { screenToFlowPosition } = useReactFlow();
   const isNewFlow = !flowId || flowId === 'new';
 
   const [flowName, setFlowName] = useState('Untitled Flow');
@@ -58,6 +59,7 @@ export default function FlowEditorClient({ flowId }: FlowEditorClientProps) {
   const [edges, setEdges, onEdgesChange] = useEdgesState([] as Edge[]);
   const [selectedNode, setSelectedNode] = useState<FlowNode | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
   // Fetch existing flow
@@ -128,6 +130,8 @@ export default function FlowEditorClient({ flowId }: FlowEditorClientProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['flows'] });
       queryClient.invalidateQueries({ queryKey: ['flow', flowId] });
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2000);
     },
   });
 
@@ -186,24 +190,38 @@ export default function FlowEditorClient({ flowId }: FlowEditorClientProps) {
       event.preventDefault();
 
       const type = event.dataTransfer.getData('application/reactflow') as FlowNodeType;
-      if (!type || !reactFlowWrapper.current) return;
+      if (!type) return;
 
-      const bounds = reactFlowWrapper.current.getBoundingClientRect();
-      const position = {
-        x: event.clientX - bounds.left,
-        y: event.clientY - bounds.top,
-      };
+      // Convert screen coordinates to flow coordinates
+      const position = screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+
+      // Create default data based on node type
+      let defaultData: Record<string, unknown> = { label: type };
+      if (type === 'trigger') {
+        defaultData = { triggerType: 'keyword', keywords: [] };
+      } else if (type === 'message') {
+        defaultData = { messageType: 'text', text: '' };
+      } else if (type === 'condition') {
+        defaultData = { conditionType: 'has_email' };
+      } else if (type === 'delay') {
+        defaultData = { delayType: 'minutes', value: 5 };
+      } else if (type === 'action') {
+        defaultData = { actionType: 'collect_email' };
+      }
 
       const newNode: Node = {
         id: `${type}-${Date.now()}`,
         type,
         position,
-        data: { label: type },
+        data: defaultData,
       };
 
       setNodes((nds) => [...nds, newNode]);
     },
-    [setNodes]
+    [setNodes, screenToFlowPosition]
   );
 
   const handleSave = async () => {
@@ -250,7 +268,6 @@ export default function FlowEditorClient({ flowId }: FlowEditorClientProps) {
   }
 
   return (
-    <ReactFlowProvider>
       <div className="h-screen flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b bg-white">
@@ -280,20 +297,23 @@ export default function FlowEditorClient({ flowId }: FlowEditorClientProps) {
               Settings
             </Button>
             <Button
-              variant="secondary"
-              size="sm"
-              disabled
-            >
-              <Play className="h-4 w-4 mr-2" />
-              Preview
-            </Button>
-            <Button
               size="sm"
               onClick={handleSave}
               disabled={createFlowMutation.isPending || updateFlowMutation.isPending}
             >
-              <Save className="h-4 w-4 mr-2" />
-              {createFlowMutation.isPending || updateFlowMutation.isPending ? 'Saving...' : 'Save'}
+              {saveSuccess ? (
+                <>
+                  <Check className="h-4 w-4 mr-2" />
+                  Saved!
+                </>
+              ) : createFlowMutation.isPending || updateFlowMutation.isPending ? (
+                'Saving...'
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  Save
+                </>
+              )}
             </Button>
           </div>
         </div>
@@ -368,6 +388,13 @@ export default function FlowEditorClient({ flowId }: FlowEditorClientProps) {
           )}
         </div>
       </div>
+  );
+}
+
+export default function FlowEditorClient({ flowId }: FlowEditorClientProps) {
+  return (
+    <ReactFlowProvider>
+      <FlowEditorInner flowId={flowId} />
     </ReactFlowProvider>
   );
 }
