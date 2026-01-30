@@ -138,7 +138,7 @@ export function NodeEditor({ node, onUpdate, onClose, onDelete }: NodeEditorProp
           />
         ) : (
           <Textarea
-            label="Message Text"
+            label="DM Text"
             value={data.text || ''}
             onChange={(e) => setLocalData({ ...data, text: e.target.value })}
             placeholder="Hey {username}! Thanks for reaching out..."
@@ -278,7 +278,7 @@ export function NodeEditor({ node, onUpdate, onClose, onDelete }: NodeEditorProp
       case 'trigger':
         return 'Edit Trigger';
       case 'message':
-        return 'Edit Message';
+        return 'Edit DM';
       case 'condition':
         return 'Edit Condition';
       case 'delay':

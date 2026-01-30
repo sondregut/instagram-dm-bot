@@ -24,8 +24,8 @@ const nodeTypes: NodeTypeItem[] = [
   },
   {
     type: 'message',
-    label: 'Message',
-    description: 'Send a message',
+    label: 'DM',
+    description: 'Send a DM',
     icon: MessageSquare,
     color: 'text-blue-600',
     bgColor: 'bg-blue-100',

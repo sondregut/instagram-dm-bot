@@ -44,10 +44,10 @@ function MessageNode({ data, selected }: MessageNodeProps) {
         </div>
         <div>
           <div className="text-xs font-medium text-blue-600 uppercase tracking-wide">
-            Message
+            DM
           </div>
           <div className="text-sm font-semibold text-gray-900">
-            {isAI ? 'AI Response' : 'Send Message'}
+            {isAI ? 'AI Response' : 'Send DM'}
           </div>
         </div>
       </div>

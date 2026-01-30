@@ -159,10 +159,10 @@ export const TRIGGER_TYPES: { value: TriggerType; label: string; description: st
 ];
 
 export const MESSAGE_TYPES: { value: MessageType; label: string }[] = [
-  { value: 'text', label: 'Text Message' },
-  { value: 'quick_replies', label: 'Quick Replies' },
-  { value: 'buttons', label: 'Buttons' },
-  { value: 'image', label: 'Image' },
+  { value: 'text', label: 'DM' },
+  { value: 'quick_replies', label: 'DM with Quick Replies' },
+  { value: 'buttons', label: 'DM with Buttons' },
+  { value: 'image', label: 'DM with Image' },
 ];
 
 export const CONDITION_TYPES: { value: ConditionType; label: string }[] = [
