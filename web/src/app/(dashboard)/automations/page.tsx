@@ -317,7 +317,7 @@ function AutomationModal({
   };
 
   // Determine which fields to show based on automation type
-  const showKeywords = ['comment_to_dm', 'keyword_dm', 'story_reply'].includes(formData.type);
+  const showKeywords = ['keyword_dm', 'story_reply'].includes(formData.type);
   const showPostSelector = formData.type === 'comment_to_dm';
 
   return (
@@ -325,7 +325,7 @@ function AutomationModal({
       isOpen={isOpen}
       onClose={onClose}
       title={automation ? 'Edit Automation' : 'Create Automation'}
-      size="lg"
+      size={showPostSelector ? '3xl' : 'lg'}
     >
       <form onSubmit={handleSubmit} className="space-y-5">
         <Select
@@ -342,26 +342,34 @@ function AutomationModal({
           {automationTypes.find(t => t.value === formData.type)?.description}
         </p>
 
+        {/* Enhanced PostSelector for comment_to_dm */}
+        {showPostSelector && (
+          <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+            <PostSelector
+              selectedPostIds={formData.trigger.postIds || []}
+              onChange={(postIds) =>
+                setFormData({
+                  ...formData,
+                  trigger: { ...formData.trigger, postIds },
+                })
+              }
+              accountId={accountId}
+              keywords={keywordsInput.split(',').map(k => k.trim()).filter(k => k.length > 0)}
+              onKeywordsChange={(keywords) => setKeywordsInput(keywords.join(', '))}
+              showPreview={true}
+              showKeywordFilter={true}
+              showReplyToggle={false}
+            />
+          </div>
+        )}
+
+        {/* Simple keywords input for other automation types */}
         {showKeywords && (
           <Input
             label={formData.type === 'story_reply' ? 'Trigger Keywords (optional, comma-separated)' : 'Trigger Keywords (comma-separated)'}
             value={keywordsInput}
             onChange={(e) => setKeywordsInput(e.target.value)}
             placeholder="FREE, GUIDE, LINK"
-          />
-        )}
-
-        {showPostSelector && (
-          <PostSelector
-            selectedPostIds={formData.trigger.postIds || []}
-            onChange={(postIds) =>
-              setFormData({
-                ...formData,
-                trigger: { ...formData.trigger, postIds },
-              })
-            }
-            posts={[]} // TODO: Fetch actual posts from Instagram API
-            isLoading={false}
           />
         )}
 

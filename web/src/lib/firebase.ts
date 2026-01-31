@@ -151,6 +151,8 @@ export interface ConversationMessage {
   timestamp: { _seconds: number };
 }
 
+export type ContactSource = 'dm' | 'comment' | 'new_follower' | 'story_reply' | 'story_mention' | 'manual';
+
 export interface Conversation {
   id: string;
   userId: string;
@@ -167,6 +169,14 @@ export interface Conversation {
   messages: ConversationMessage[];
   lastMessageAt: { _seconds: number };
   createdAt: { _seconds: number };
+
+  // Profile data (captured from interactions)
+  profilePictureUrl?: string;
+  profilePictureUpdatedAt?: { _seconds: number };
+
+  // Contact management
+  tags?: string[];
+  source?: ContactSource;
 }
 
 export interface GetConversationsParams {
@@ -179,6 +189,42 @@ export interface GetConversationsParams {
 export interface GetConversationsResult {
   conversations: Conversation[];
   lastDoc?: string;
+}
+
+// Contacts (Conversations as contacts)
+export interface GetContactsParams {
+  accountId?: string;
+  source?: ContactSource;
+  tags?: string[];
+  hasEmail?: boolean;
+  search?: string;
+  limit?: number;
+  startAfter?: string;
+}
+
+export interface GetContactsResult {
+  contacts: Conversation[];
+  lastDoc?: string;
+  totalCount?: number;
+}
+
+export interface BulkTagParams {
+  contactIds: string[];
+  tagsToAdd?: string[];
+  tagsToRemove?: string[];
+}
+
+export interface BulkDMParams {
+  contactIds: string[];
+  message: string;
+  accountId: string;
+}
+
+export interface ExportContactsParams {
+  accountId?: string;
+  contactIds?: string[];
+  source?: ContactSource;
+  tags?: string[];
 }
 
 export interface InstagramConfigInput {
@@ -264,6 +310,20 @@ export interface KnowledgeBase {
 }
 
 // ============================================
+// INSTAGRAM POST TYPES
+// ============================================
+
+export interface InstagramPost {
+  id: string;
+  mediaType: 'IMAGE' | 'VIDEO' | 'CAROUSEL_ALBUM';
+  mediaUrl?: string;
+  thumbnailUrl?: string;
+  caption?: string;
+  timestamp: string;
+  permalink?: string;
+}
+
+// ============================================
 // USER TYPES
 // ============================================
 
@@ -295,6 +355,13 @@ export const cloudFunctions = {
   // Conversations
   getConversations: httpsCallable<GetConversationsParams, GetConversationsResult>(functions, 'getConversations'),
   getConversation: httpsCallable<{ id: string }, Conversation>(functions, 'getConversation'),
+
+  // Contacts
+  getContacts: httpsCallable<GetContactsParams, GetContactsResult>(functions, 'getContacts'),
+  bulkTagContacts: httpsCallable<BulkTagParams, { success: boolean; updated: number }>(functions, 'bulkTagContacts'),
+  bulkDMContacts: httpsCallable<BulkDMParams, { success: boolean; sent: number; failed: number }>(functions, 'bulkDMContacts'),
+  exportContacts: httpsCallable<ExportContactsParams, { csv: string }>(functions, 'exportContacts'),
+  getContactTags: httpsCallable<{ accountId?: string }, { tags: string[] }>(functions, 'getContactTags'),
 
   // Legacy Instagram Config (deprecated)
   saveInstagramConfig: httpsCallable<InstagramConfigInput, { success: boolean }>(functions, 'saveInstagramConfig'),
@@ -350,6 +417,14 @@ export const cloudFunctions = {
   // ============================================
   getUserProfile: httpsCallable<void, UserProfile>(functions, 'getUserProfile'),
   saveUserProfile: httpsCallable<{ displayName?: string }, { success: boolean }>(functions, 'saveUserProfile'),
+
+  // ============================================
+  // INSTAGRAM POSTS
+  // ============================================
+  getUserInstagramPosts: httpsCallable<
+    { accountId: string; limit?: number },
+    { posts: InstagramPost[] }
+  >(functions, 'getUserInstagramPosts'),
 
   // ============================================
   // FLOWS

@@ -8,6 +8,7 @@ import {
   ConditionData,
   DelayData,
   ActionData,
+  AIStepData,
   getNextNodes,
   findMatchingTriggers,
   TriggerType,
@@ -187,6 +188,10 @@ export class FlowExecutor {
           await this.executeActionNode(node, execution);
           return true;
 
+        case 'ai_step':
+          await this.executeAIStepNode(node, execution);
+          return false; // Pause execution - AI step handles continuation
+
         default:
           console.warn(`[FlowExecutor] Unknown node type: ${node.type}`);
           return true;
@@ -344,6 +349,178 @@ export class FlowExecutor {
   }
 
   /**
+   * Execute an AI Step node - starts conversational AI
+   */
+  async executeAIStepNode(
+    node: FlowNode,
+    execution: FlowExecution
+  ): Promise<void> {
+    const data = node.data as AIStepData;
+
+    console.log(`[FlowExecutor] Starting AI Step with goal: ${data.goal?.substring(0, 50)}...`);
+
+    // Build a system prompt that combines the goal and context
+    const systemPrompt = this.buildAIStepPrompt(data);
+
+    // Generate initial AI message based on context
+    const initialMessage = await generateAIResponse(
+      systemPrompt,
+      [{
+        role: 'user',
+        content: `Start a conversation with the user. Their username is @${execution.senderUsername}. ${
+          execution.context.triggerCommentText
+            ? `They commented: "${execution.context.triggerCommentText}"`
+            : 'They have initiated contact.'
+        }`
+      }],
+      { maxTokens: 300 }
+    );
+
+    // Send the AI message
+    await sendInstagramDM(execution.senderId, initialMessage, this.account);
+
+    // Update execution context to track AI step state
+    execution.context.customFields.aiStepNodeId = node.id;
+    execution.context.customFields.aiStepTurns = 1;
+    execution.context.customFields.aiStepMaxTurns = data.maxTurns || 10;
+    execution.context.customFields.aiStepGoal = data.goal;
+    execution.context.customFields.aiStepContext = data.context;
+    execution.context.customFields.aiStepMessages = JSON.stringify([
+      { role: 'assistant', content: initialMessage }
+    ]);
+
+    // Update execution to waiting state for user response
+    await collections.flowExecutions.doc(execution.id).update({
+      status: 'waiting',
+      currentNodeId: node.id,
+      context: execution.context,
+      updatedAt: admin.firestore.Timestamp.now(),
+    });
+
+    console.log(`[FlowExecutor] AI Step initiated, waiting for user response`);
+  }
+
+  /**
+   * Build system prompt for AI Step
+   */
+  private buildAIStepPrompt(data: AIStepData): string {
+    let prompt = `You are a helpful AI assistant for Instagram DM conversations.
+
+GOAL: ${data.goal || 'Help the user with their inquiry'}
+
+CONTEXT/KNOWLEDGE:
+${data.context || 'Be helpful and friendly.'}
+
+INSTRUCTIONS:
+- Be conversational and friendly
+- Keep responses concise (under 200 characters when possible)
+- Stay focused on achieving the goal
+- If the user seems ready or you've accomplished the goal, politely wrap up
+- Don't use emojis excessively
+- Respond in the same language as the user`;
+
+    // Add account's AI personality if available
+    const accountPrompt = buildSystemPrompt(this.account);
+    if (accountPrompt) {
+      prompt += `\n\nADDITIONAL BUSINESS CONTEXT:\n${accountPrompt}`;
+    }
+
+    return prompt;
+  }
+
+  /**
+   * Handle user message during AI Step
+   * Returns true if AI step is complete and should continue to next node
+   */
+  async handleAIStepMessage(
+    execution: FlowExecution,
+    message: string,
+    flow: Flow
+  ): Promise<boolean> {
+    const aiStepNodeId = execution.context.customFields.aiStepNodeId as string;
+    const currentTurns = (execution.context.customFields.aiStepTurns as number) || 0;
+    const maxTurns = (execution.context.customFields.aiStepMaxTurns as number) || 10;
+    const goal = (execution.context.customFields.aiStepGoal as string) || '';
+    const context = (execution.context.customFields.aiStepContext as string) || '';
+
+    // Parse existing messages
+    let messages: { role: 'user' | 'assistant'; content: string }[] = [];
+    try {
+      const storedMessages = execution.context.customFields.aiStepMessages as string;
+      if (storedMessages) {
+        messages = JSON.parse(storedMessages);
+      }
+    } catch {
+      messages = [];
+    }
+
+    // Add user message
+    messages.push({ role: 'user', content: message });
+
+    // Check if max turns reached
+    const newTurnCount = currentTurns + 1;
+    if (newTurnCount >= maxTurns) {
+      console.log(`[FlowExecutor] AI Step reached max turns (${maxTurns}), completing`);
+
+      // Send a wrap-up message
+      const wrapUpMessage = await generateAIResponse(
+        this.buildAIStepPrompt({ goal, context, maxTurns }),
+        [...messages, {
+          role: 'user',
+          content: 'SYSTEM: This is the last message in this conversation flow. Please wrap up politely.'
+        }],
+        { maxTokens: 200 }
+      );
+
+      await sendInstagramDM(execution.senderId, wrapUpMessage, this.account);
+
+      // Clear AI step context
+      this.clearAIStepContext(execution);
+
+      return true; // Continue to next node
+    }
+
+    // Generate AI response
+    const systemPrompt = this.buildAIStepPrompt({ goal, context, maxTurns });
+    const aiResponse = await generateAIResponse(
+      systemPrompt,
+      messages,
+      { maxTokens: 300 }
+    );
+
+    // Send response
+    await sendInstagramDM(execution.senderId, aiResponse, this.account);
+
+    // Add AI response to messages
+    messages.push({ role: 'assistant', content: aiResponse });
+
+    // Update execution context
+    execution.context.customFields.aiStepTurns = newTurnCount;
+    execution.context.customFields.aiStepMessages = JSON.stringify(messages);
+
+    await collections.flowExecutions.doc(execution.id).update({
+      context: execution.context,
+      updatedAt: admin.firestore.Timestamp.now(),
+    });
+
+    console.log(`[FlowExecutor] AI Step turn ${newTurnCount}/${maxTurns} completed`);
+
+    return false; // Stay in AI step
+  }
+
+  /**
+   * Clear AI Step context after completion
+   */
+  private clearAIStepContext(execution: FlowExecution): void {
+    delete execution.context.customFields.aiStepNodeId;
+    delete execution.context.customFields.aiStepTurns;
+    delete execution.context.customFields.aiStepMaxTurns;
+    delete execution.context.customFields.aiStepGoal;
+    delete execution.context.customFields.aiStepContext;
+    delete execution.context.customFields.aiStepMessages;
+  }
+
+  /**
    * Execute an action node
    */
   async executeActionNode(
@@ -412,6 +589,33 @@ export class FlowExecutor {
 
     // Update context with last message
     execution.context.lastUserMessage = message;
+
+    // Check if we're in an AI Step
+    if (execution.context.customFields.aiStepNodeId) {
+      const flow = await this.getFlow(execution.flowId);
+      if (flow) {
+        const shouldContinue = await this.handleAIStepMessage(execution, message, flow);
+
+        if (shouldContinue) {
+          // AI Step complete, clear context and continue to next node
+          const currentNodeId = execution.context.customFields.aiStepNodeId as string;
+          this.clearAIStepContext(execution);
+
+          execution.previousNodeIds.push(execution.currentNodeId);
+          execution.currentNodeId = currentNodeId;
+
+          // Update execution and continue
+          await collections.flowExecutions.doc(execution.id).update({
+            status: 'active',
+            context: execution.context,
+            updatedAt: admin.firestore.Timestamp.now(),
+          });
+
+          await this.continueExecution(execution, flow);
+        }
+        return;
+      }
+    }
 
     // Check if we're collecting email
     if (execution.context.customFields.awaitingEmail) {

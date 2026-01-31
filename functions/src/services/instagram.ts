@@ -277,7 +277,7 @@ export async function sendQuickReplyDM(
 }
 
 /**
- * Get Instagram user profile
+ * Get Instagram user profile (including profile picture)
  */
 export async function getInstagramUser(
   userId: string,
@@ -286,6 +286,7 @@ export async function getInstagramUser(
   id: string;
   username: string;
   name?: string;
+  profile_picture_url?: string;
 } | null> {
   let accessToken: string;
 
@@ -301,8 +302,9 @@ export async function getInstagramUser(
   const isInstagramToken = accessToken?.startsWith('IGAA') || accessToken?.startsWith('IG');
 
   // Try Instagram API first for Instagram tokens
+  // Note: profile_picture_url is only available for users who have interacted with the account
   const result = await graphRequest(
-    `/${userId}?fields=id,username,name`,
+    `/${userId}?fields=id,username,name,profile_picture_url`,
     accessToken,
     'GET',
     undefined,
@@ -310,7 +312,7 @@ export async function getInstagramUser(
   );
 
   if (result.success && result.data) {
-    console.log(`[Instagram] Got user info for ${userId}: @${result.data.username}`);
+    console.log(`[Instagram] Got user info for ${userId}: @${result.data.username}${result.data.profile_picture_url ? ' (with profile pic)' : ''}`);
     return result.data;
   }
 
@@ -318,7 +320,7 @@ export async function getInstagramUser(
 
   // Try the other API as fallback
   const fallbackResult = await graphRequest(
-    `/${userId}?fields=id,username,name`,
+    `/${userId}?fields=id,username,name,profile_picture_url`,
     accessToken,
     'GET',
     undefined,
@@ -326,7 +328,7 @@ export async function getInstagramUser(
   );
 
   if (fallbackResult.success && fallbackResult.data) {
-    console.log(`[Instagram] Got user info via fallback for ${userId}: @${fallbackResult.data.username}`);
+    console.log(`[Instagram] Got user info via fallback for ${userId}: @${fallbackResult.data.username}${fallbackResult.data.profile_picture_url ? ' (with profile pic)' : ''}`);
     return fallbackResult.data;
   }
 
@@ -565,4 +567,93 @@ export async function verifyAccountConnection(account: InstagramAccount): Promis
     console.error('Error verifying account connection:', error);
     return false;
   }
+}
+
+/**
+ * Instagram post data
+ */
+export interface InstagramPost {
+  id: string;
+  mediaType: 'IMAGE' | 'VIDEO' | 'CAROUSEL_ALBUM';
+  mediaUrl?: string;
+  thumbnailUrl?: string;
+  caption?: string;
+  timestamp: string;
+  permalink?: string;
+}
+
+/**
+ * Get user's Instagram posts/reels
+ * Fetches posts from the Instagram Graph API with media info
+ */
+export async function getUserPosts(
+  account: InstagramAccount,
+  limit: number = 25
+): Promise<InstagramPost[]> {
+  try {
+    const accessToken = await getAccessToken(account);
+    const isInstagramToken = accessToken?.startsWith('IGAA') || accessToken?.startsWith('IG');
+
+    console.log(`[Instagram] Fetching posts for account ${account.username}`);
+
+    // Fetch media list with fields
+    const result = await graphRequest(
+      `/${account.instagramAccountId}/media?fields=id,media_type,media_url,thumbnail_url,caption,timestamp,permalink&limit=${limit}`,
+      accessToken,
+      'GET',
+      undefined,
+      isInstagramToken
+    );
+
+    if (!result.success || !result.data?.data) {
+      console.log(`[Instagram] Failed to fetch posts: ${result.error}`);
+
+      // Try fallback with Facebook API
+      const fallbackResult = await graphRequest(
+        `/${account.instagramAccountId}/media?fields=id,media_type,media_url,thumbnail_url,caption,timestamp,permalink&limit=${limit}`,
+        accessToken,
+        'GET',
+        undefined,
+        !isInstagramToken
+      );
+
+      if (!fallbackResult.success || !fallbackResult.data?.data) {
+        console.log(`[Instagram] Fallback also failed: ${fallbackResult.error}`);
+        return [];
+      }
+
+      return formatPosts(fallbackResult.data.data);
+    }
+
+    return formatPosts(result.data.data);
+  } catch (error) {
+    console.error('[Instagram] Error fetching posts:', error);
+    return [];
+  }
+}
+
+/**
+ * Format raw API response to InstagramPost objects
+ */
+function formatPosts(rawPosts: unknown[]): InstagramPost[] {
+  return rawPosts.map((post: unknown) => {
+    const p = post as {
+      id: string;
+      media_type: 'IMAGE' | 'VIDEO' | 'CAROUSEL_ALBUM';
+      media_url?: string;
+      thumbnail_url?: string;
+      caption?: string;
+      timestamp: string;
+      permalink?: string;
+    };
+    return {
+      id: p.id,
+      mediaType: p.media_type,
+      mediaUrl: p.media_url,
+      thumbnailUrl: p.thumbnail_url || p.media_url, // Videos have thumbnail_url, images use media_url
+      caption: p.caption,
+      timestamp: p.timestamp,
+      permalink: p.permalink,
+    };
+  });
 }

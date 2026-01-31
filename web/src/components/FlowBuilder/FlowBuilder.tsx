@@ -23,6 +23,7 @@ import MessageNode from './nodes/MessageNode';
 import ConditionNode from './nodes/ConditionNode';
 import DelayNode from './nodes/DelayNode';
 import ActionNode from './nodes/ActionNode';
+import AIStepNode from './nodes/AIStepNode';
 import { NodePalette } from './NodePalette';
 import { NodeEditor } from './NodeEditor';
 import {
@@ -34,6 +35,7 @@ import {
   ConditionData,
   DelayData,
   ActionData,
+  AIStepData,
   createDefaultNode,
 } from '@/lib/flowTypes';
 
@@ -44,6 +46,7 @@ const nodeTypes: NodeTypes = {
   condition: ConditionNode,
   delay: DelayNode,
   action: ActionNode,
+  ai_step: AIStepNode,
 };
 
 interface FlowBuilderProps {
@@ -75,6 +78,7 @@ export function FlowBuilder({
         conditionData: node.type === 'condition' ? node.data : undefined,
         delayData: node.type === 'delay' ? node.data : undefined,
         actionData: node.type === 'action' ? node.data : undefined,
+        aiStepData: node.type === 'ai_step' ? node.data : undefined,
       },
     }));
   };
@@ -82,7 +86,7 @@ export function FlowBuilder({
   // Convert React Flow format back to our FlowNode format
   const convertFromReactFlowNodes = (rfNodes: Node[]): FlowNode[] => {
     return rfNodes.map((node) => {
-      let data: TriggerData | MessageData | ConditionData | DelayData | ActionData;
+      let data: TriggerData | MessageData | ConditionData | DelayData | ActionData | AIStepData;
 
       switch (node.type) {
         case 'trigger':
@@ -99,6 +103,9 @@ export function FlowBuilder({
           break;
         case 'action':
           data = (node.data as { actionData: ActionData }).actionData || { actionType: 'collect_email' };
+          break;
+        case 'ai_step':
+          data = (node.data as { aiStepData: AIStepData }).aiStepData || { goal: '', context: '', maxTurns: 10 };
           break;
         default:
           data = { triggerType: 'keyword', keywords: [] } as TriggerData;
@@ -167,6 +174,7 @@ export function FlowBuilder({
           conditionData: newFlowNode.type === 'condition' ? newFlowNode.data : undefined,
           delayData: newFlowNode.type === 'delay' ? newFlowNode.data : undefined,
           actionData: newFlowNode.type === 'action' ? newFlowNode.data : undefined,
+          aiStepData: newFlowNode.type === 'ai_step' ? newFlowNode.data : undefined,
         },
       };
 
@@ -177,7 +185,7 @@ export function FlowBuilder({
 
   // Handle node update from editor
   const handleNodeUpdate = useCallback(
-    (nodeId: string, data: TriggerData | MessageData | ConditionData | DelayData | ActionData) => {
+    (nodeId: string, data: TriggerData | MessageData | ConditionData | DelayData | ActionData | AIStepData) => {
       setNodes((nds) =>
         nds.map((node) => {
           if (node.id !== nodeId) return node;
@@ -191,6 +199,7 @@ export function FlowBuilder({
               conditionData: node.type === 'condition' ? data : (node.data as { conditionData?: ConditionData }).conditionData,
               delayData: node.type === 'delay' ? data : (node.data as { delayData?: DelayData }).delayData,
               actionData: node.type === 'action' ? data : (node.data as { actionData?: ActionData }).actionData,
+              aiStepData: node.type === 'ai_step' ? data : (node.data as { aiStepData?: AIStepData }).aiStepData,
             },
           };
         })

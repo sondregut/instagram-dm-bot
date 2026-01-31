@@ -8,6 +8,7 @@ import {
   GitBranch,
   MessageSquare,
   Users,
+  UserCircle,
   Settings,
   LogOut,
 } from 'lucide-react';
@@ -21,6 +22,7 @@ const navigation = [
   { name: 'Automations', href: '/automations', icon: Zap },
   { name: 'Flows', href: '/flows', icon: GitBranch },
   { name: 'Conversations', href: '/conversations', icon: MessageSquare },
+  { name: 'Contacts', href: '/contacts', icon: UserCircle },
   { name: 'Leads', href: '/leads', icon: Users },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];

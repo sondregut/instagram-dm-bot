@@ -1,7 +1,7 @@
 'use client';
 
 import { DragEvent } from 'react';
-import { Zap, MessageSquare, GitBranch, Clock, Play } from 'lucide-react';
+import { Zap, MessageSquare, GitBranch, Clock, Play, Bot } from 'lucide-react';
 import { FlowNodeType } from '@/lib/flowTypes';
 
 interface NodeTypeItem {
@@ -29,6 +29,14 @@ const nodeTypes: NodeTypeItem[] = [
     icon: MessageSquare,
     color: 'text-blue-600',
     bgColor: 'bg-blue-100',
+  },
+  {
+    type: 'ai_step',
+    label: 'AI Step',
+    description: 'AI conversation',
+    icon: Bot,
+    color: 'text-purple-600',
+    bgColor: 'bg-purple-100',
   },
   {
     type: 'condition',

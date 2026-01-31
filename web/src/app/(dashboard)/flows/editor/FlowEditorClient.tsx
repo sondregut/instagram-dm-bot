@@ -18,7 +18,7 @@ import {
   useReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { ArrowLeft, Save, Settings, Check } from 'lucide-react';
+import { ArrowLeft, Save, Settings, Check, Play, Pause } from 'lucide-react';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
 import { cloudFunctions } from '@/lib/firebase';
@@ -32,6 +32,7 @@ import {
   ConditionNode,
   DelayNode,
   ActionNode,
+  AIStepNode,
 } from '@/components/FlowBuilder';
 
 const nodeTypes = {
@@ -40,6 +41,7 @@ const nodeTypes = {
   condition: ConditionNode,
   delay: DelayNode,
   action: ActionNode,
+  ai_step: AIStepNode,
 };
 
 interface FlowEditorClientProps {
@@ -60,6 +62,7 @@ function FlowEditorInner({ flowId }: FlowEditorClientProps) {
   const [selectedNode, setSelectedNode] = useState<FlowNode | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isFlowActive, setIsFlowActive] = useState(false);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
   // Fetch existing flow
@@ -78,6 +81,7 @@ function FlowEditorInner({ flowId }: FlowEditorClientProps) {
     if (flow) {
       setFlowName(flow.name);
       setFlowDescription(flow.description || '');
+      setIsFlowActive(flow.isActive);
 
       // Convert FlowNodes to React Flow nodes
       const rfNodes: Node[] = flow.nodes.map((node: FlowNode) => ({
@@ -132,6 +136,19 @@ function FlowEditorInner({ flowId }: FlowEditorClientProps) {
       queryClient.invalidateQueries({ queryKey: ['flow', flowId] });
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2000);
+    },
+  });
+
+  // Toggle flow active mutation
+  const toggleActiveMutation = useMutation({
+    mutationFn: async ({ id, isActive }: { id: string; isActive: boolean }) => {
+      const result = await cloudFunctions.toggleFlowActive({ id, isActive });
+      return result.data;
+    },
+    onSuccess: (data) => {
+      setIsFlowActive(data.isActive);
+      queryClient.invalidateQueries({ queryKey: ['flows'] });
+      queryClient.invalidateQueries({ queryKey: ['flow', flowId] });
     },
   });
 
@@ -210,6 +227,8 @@ function FlowEditorInner({ flowId }: FlowEditorClientProps) {
         defaultData = { delayType: 'minutes', value: 5 };
       } else if (type === 'action') {
         defaultData = { actionType: 'collect_email' };
+      } else if (type === 'ai_step') {
+        defaultData = { goal: '', context: '', maxTurns: 10 };
       }
 
       const newNode: Node = {
@@ -297,6 +316,7 @@ function FlowEditorInner({ flowId }: FlowEditorClientProps) {
               Settings
             </Button>
             <Button
+              variant="secondary"
               size="sm"
               onClick={handleSave}
               disabled={createFlowMutation.isPending || updateFlowMutation.isPending}
@@ -315,6 +335,35 @@ function FlowEditorInner({ flowId }: FlowEditorClientProps) {
                 </>
               )}
             </Button>
+            {!isNewFlow && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  // First save, then toggle active
+                  handleSave();
+                  toggleActiveMutation.mutate({ id: flowId!, isActive: !isFlowActive });
+                }}
+                disabled={toggleActiveMutation.isPending}
+                className={isFlowActive
+                  ? 'bg-red-500 hover:bg-red-600 text-white'
+                  : 'bg-green-500 hover:bg-green-600 text-white'
+                }
+              >
+                {toggleActiveMutation.isPending ? (
+                  'Updating...'
+                ) : isFlowActive ? (
+                  <>
+                    <Pause className="h-4 w-4 mr-2" />
+                    Pause
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-4 w-4 mr-2" />
+                    Set Live
+                  </>
+                )}
+              </Button>
+            )}
           </div>
         </div>
 

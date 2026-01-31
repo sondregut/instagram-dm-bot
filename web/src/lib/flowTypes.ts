@@ -2,12 +2,12 @@
 // FLOW NODE TYPES
 // ============================================
 
-export type FlowNodeType = 'trigger' | 'message' | 'condition' | 'delay' | 'action';
+export type FlowNodeType = 'trigger' | 'message' | 'condition' | 'delay' | 'action' | 'ai_step';
 
 export interface FlowNode {
   id: string;
   type: FlowNodeType;
-  data: TriggerData | MessageData | ConditionData | DelayData | ActionData;
+  data: TriggerData | MessageData | ConditionData | DelayData | ActionData | AIStepData;
   position: { x: number; y: number };
 }
 
@@ -86,6 +86,17 @@ export interface ActionData {
 }
 
 // ============================================
+// AI STEP DATA
+// ============================================
+
+export interface AIStepData {
+  goal: string;        // What should AI accomplish, e.g., "Help user find the right product"
+  context: string;     // Business info AI should know, e.g., "We sell eco-friendly products..."
+  maxTurns?: number;   // Max conversation turns before moving to next node (default: 10)
+  exitKeywords?: string[];  // Keywords that trigger exit to next node
+}
+
+// ============================================
 // FLOW DOCUMENT
 // ============================================
 
@@ -144,6 +155,7 @@ export interface ReactFlowNodeData {
   conditionData?: ConditionData;
   delayData?: DelayData;
   actionData?: ActionData;
+  aiStepData?: AIStepData;
 }
 
 // ============================================
@@ -249,6 +261,18 @@ export function createDefaultNode(type: FlowNodeType, position: { x: number; y: 
         } as ActionData,
       };
 
+    case 'ai_step':
+      return {
+        id,
+        type,
+        position,
+        data: {
+          goal: '',
+          context: '',
+          maxTurns: 10,
+        } as AIStepData,
+      };
+
     default:
       throw new Error(`Unknown node type: ${type}`);
   }
@@ -266,6 +290,8 @@ export function getNodeColor(type: FlowNodeType): string {
       return '#8b5cf6'; // violet
     case 'action':
       return '#ef4444'; // red
+    case 'ai_step':
+      return '#8b5cf6'; // violet (same as delay, can adjust)
     default:
       return '#6b7280'; // gray
   }
@@ -283,6 +309,8 @@ export function getNodeIcon(type: FlowNodeType): string {
       return 'Clock';
     case 'action':
       return 'Play';
+    case 'ai_step':
+      return 'Bot';
     default:
       return 'Circle';
   }

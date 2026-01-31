@@ -1,5 +1,5 @@
 import { db, Automation, InstagramAccount } from '../firebase';
-import { sendInstagramDM, getFollowers } from '../services/instagram';
+import { sendInstagramDM, getFollowers, getInstagramUser } from '../services/instagram';
 import { generateWelcomeMessage } from '../services/ai';
 import { getAllActiveAccounts, buildSystemPrompt } from '../services/accounts';
 import * as admin from 'firebase-admin';
@@ -196,6 +196,9 @@ async function createFollowerConversation(
   welcomeMessage: string,
   account: InstagramAccount
 ): Promise<void> {
+  // Fetch user profile including profile picture
+  const userInfo = await getInstagramUser(userId, account);
+
   const conversationRef = db.collection('conversations').doc();
 
   await conversationRef.set({
@@ -203,10 +206,12 @@ async function createFollowerConversation(
     userId: account.userId,
     accountId: account.id,
     instagramUserId: userId,
-    username,
+    username: userInfo?.username || username,
     currentAutomationId: automation.id,
     conversationState: automation.collectEmail ? 'ai_chat' : 'greeting',
-    collectedData: {},
+    collectedData: {
+      name: userInfo?.name,
+    },
     messages: [
       {
         role: 'assistant',
@@ -215,6 +220,9 @@ async function createFollowerConversation(
       },
     ],
     source: 'new_follower',
+    // Store profile picture from interaction
+    profilePictureUrl: userInfo?.profile_picture_url,
+    profilePictureUpdatedAt: userInfo?.profile_picture_url ? admin.firestore.Timestamp.now() : undefined,
     lastMessageAt: admin.firestore.Timestamp.now(),
     createdAt: admin.firestore.Timestamp.now(),
   });

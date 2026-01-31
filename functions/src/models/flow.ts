@@ -4,12 +4,12 @@ import * as admin from 'firebase-admin';
 // FLOW NODE TYPES
 // ============================================
 
-export type FlowNodeType = 'trigger' | 'message' | 'condition' | 'delay' | 'action';
+export type FlowNodeType = 'trigger' | 'message' | 'condition' | 'delay' | 'action' | 'ai_step';
 
 export interface FlowNode {
   id: string;
   type: FlowNodeType;
-  data: TriggerData | MessageData | ConditionData | DelayData | ActionData;
+  data: TriggerData | MessageData | ConditionData | DelayData | ActionData | AIStepData;
   position: { x: number; y: number };
 }
 
@@ -87,6 +87,17 @@ export interface ActionData {
   tag?: string;
   customMessage?: string;
   notifyEmail?: string;
+}
+
+// ============================================
+// AI STEP DATA
+// ============================================
+
+export interface AIStepData {
+  goal: string;        // What should AI accomplish, e.g., "Help user find the right product"
+  context: string;     // Business info AI should know, e.g., "We sell eco-friendly products..."
+  maxTurns?: number;   // Max conversation turns before moving to next node (default: 10)
+  exitKeywords?: string[];  // Keywords that trigger exit to next node
 }
 
 // ============================================

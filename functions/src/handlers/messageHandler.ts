@@ -37,13 +37,8 @@ export async function handleMessage(
   console.log(`[DEBUG] Received message from ${senderId}: ${messageText.substring(0, 50)}...`);
   console.log(`[DEBUG] Account: ${account.username} (${account.id})`);
 
-  // Check if we're within business hours
-  if (!isWithinBusinessHours(account)) {
-    const outOfHoursMessage = account.settings.outOfHoursMessage ||
-      "Thanks for reaching out! We're currently outside business hours but will respond soon.";
-    await sendInstagramDM(senderId, outOfHoursMessage, account);
-    return;
-  }
+  // Check if we're within business hours (only matters if there's an automation that might trigger)
+  // We'll check this later after determining if an automation matches
 
   // Handle quick reply payloads
   if (quickReplyPayload) {
@@ -78,12 +73,50 @@ export async function handleMessage(
   console.log('[DEBUG] Triggered automation:', triggeredAutomation?.id || 'none');
 
   if (triggeredAutomation && !conversation.currentAutomationId) {
+    // Check business hours before starting automation
+    if (!isWithinBusinessHours(account)) {
+      const outOfHoursMessage = account.settings.outOfHoursMessage ||
+        "Thanks for reaching out! We're currently outside business hours but will respond soon.";
+      await sendInstagramDM(senderId, outOfHoursMessage, account);
+      return;
+    }
     // Start new automation flow
     await startAutomation(senderId, conversation, triggeredAutomation, messageText, account);
     return;
   }
 
-  // Handle based on conversation state
+  // Handle based on conversation state - only respond if there's an active automation
+  // or if a keyword trigger matches
+  const hasActiveAutomation = conversation.currentAutomationId ||
+    ['collecting_email', 'collecting_phone', 'ai_chat'].includes(conversation.conversationState);
+
+  if (!hasActiveAutomation) {
+    // No active automation - only respond if a keyword trigger matches
+    const automation = await checkKeywordTriggers(messageText, account.id);
+    if (automation) {
+      // Check business hours
+      if (!isWithinBusinessHours(account)) {
+        const outOfHoursMessage = account.settings.outOfHoursMessage ||
+          "Thanks for reaching out! We're currently outside business hours but will respond soon.";
+        await sendInstagramDM(senderId, outOfHoursMessage, account);
+        return;
+      }
+      await startAutomation(senderId, conversation, automation, messageText, account);
+    } else {
+      // No matching automation - don't respond
+      console.log(`[DEBUG] No matching automation for message from ${senderId}, ignoring`);
+    }
+    return;
+  }
+
+  // Check business hours for active automations
+  if (!isWithinBusinessHours(account)) {
+    const outOfHoursMessage = account.settings.outOfHoursMessage ||
+      "Thanks for reaching out! We're currently outside business hours but will respond soon.";
+    await sendInstagramDM(senderId, outOfHoursMessage, account);
+    return;
+  }
+
   switch (conversation.conversationState) {
     case 'collecting_email':
       await handleEmailCollection(senderId, conversation, messageText, account);
@@ -100,17 +133,11 @@ export async function handleMessage(
     case 'greeting':
     case 'completed':
     default:
-      // Check if there's an active automation, otherwise handle with AI
+      // Should not reach here due to hasActiveAutomation check above
       if (conversation.currentAutomationId) {
         await handleAIConversation(senderId, conversation, messageText, account);
       } else {
-        // No active automation - check for any keyword triggers again or use default response
-        const automation = await checkKeywordTriggers(messageText, account.id);
-        if (automation) {
-          await startAutomation(senderId, conversation, automation, messageText, account);
-        } else {
-          await sendDefaultResponse(senderId, messageText, account);
-        }
+        console.log(`[DEBUG] Unexpected state: no automation for message from ${senderId}, ignoring`);
       }
   }
 }
@@ -132,10 +159,32 @@ async function getOrCreateConversation(
 
   if (!conversations.empty) {
     const doc = conversations.docs[0];
-    return { id: doc.id, ...doc.data() } as Conversation;
+    const conversation = { id: doc.id, ...doc.data() } as Conversation;
+
+    // Update profile picture if it's stale (older than 24 hours) or missing
+    const now = admin.firestore.Timestamp.now();
+    const oneDayAgo = admin.firestore.Timestamp.fromMillis(now.toMillis() - 24 * 60 * 60 * 1000);
+    const shouldUpdateProfile = !conversation.profilePictureUrl ||
+      !conversation.profilePictureUpdatedAt ||
+      conversation.profilePictureUpdatedAt.toMillis() < oneDayAgo.toMillis();
+
+    if (shouldUpdateProfile) {
+      const userInfo = await getInstagramUser(instagramUserId, account);
+      if (userInfo?.profile_picture_url) {
+        await db.collection('conversations').doc(doc.id).update({
+          profilePictureUrl: userInfo.profile_picture_url,
+          profilePictureUpdatedAt: now,
+          'collectedData.name': userInfo.name || conversation.collectedData?.name,
+        });
+        conversation.profilePictureUrl = userInfo.profile_picture_url;
+        conversation.profilePictureUpdatedAt = now;
+      }
+    }
+
+    return conversation;
   }
 
-  // Get user info
+  // Get user info (including profile picture)
   const userInfo = await getInstagramUser(instagramUserId, account);
 
   // Use username if available, otherwise use truncated ID as fallback
@@ -151,10 +200,16 @@ async function getOrCreateConversation(
     username,
     currentAutomationId: null,
     conversationState: 'greeting',
-    collectedData: {},
+    collectedData: {
+      name: userInfo?.name,
+    },
     messages: [],
     lastMessageAt: admin.firestore.Timestamp.now(),
     createdAt: admin.firestore.Timestamp.now(),
+    // Store profile picture from interaction
+    profilePictureUrl: userInfo?.profile_picture_url,
+    profilePictureUpdatedAt: userInfo?.profile_picture_url ? admin.firestore.Timestamp.now() : undefined,
+    source: 'dm',
   };
 
   await conversationRef.set(newConversation);

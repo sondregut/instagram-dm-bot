@@ -80,6 +80,14 @@ export interface Conversation {
   messages: ConversationMessage[];
   lastMessageAt: admin.firestore.Timestamp;
   createdAt: admin.firestore.Timestamp;
+
+  // Profile data (captured from interactions)
+  profilePictureUrl?: string;
+  profilePictureUpdatedAt?: admin.firestore.Timestamp;
+
+  // Contact management
+  tags?: string[];
+  source?: 'dm' | 'comment' | 'new_follower' | 'story_reply' | 'story_mention' | 'manual';
 }
 
 export interface ConversationMessage {

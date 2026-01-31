@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, MessageCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { Input } from '@/components/Input';
 import { Textarea } from '@/components/Textarea';
 import { Select } from '@/components/Select';
 import { Toggle } from '@/components/Toggle';
 import { Button } from '@/components/Button';
+import { cn } from '@/lib/utils';
+import { AITestChat } from './AITestChat';
 import {
   FlowNode,
   TriggerData,
@@ -14,6 +16,7 @@ import {
   ConditionData,
   DelayData,
   ActionData,
+  AIStepData,
   TRIGGER_TYPES,
   MESSAGE_TYPES,
   CONDITION_TYPES,
@@ -23,15 +26,16 @@ import {
 
 interface NodeEditorProps {
   node: FlowNode | null;
-  onUpdate: (nodeId: string, data: TriggerData | MessageData | ConditionData | DelayData | ActionData) => void;
+  onUpdate: (nodeId: string, data: TriggerData | MessageData | ConditionData | DelayData | ActionData | AIStepData) => void;
   onClose: () => void;
   onDelete: (nodeId: string) => void;
 }
 
 export function NodeEditor({ node, onUpdate, onClose, onDelete }: NodeEditorProps) {
-  const [localData, setLocalData] = useState<TriggerData | MessageData | ConditionData | DelayData | ActionData | null>(null);
+  const [localData, setLocalData] = useState<TriggerData | MessageData | ConditionData | DelayData | ActionData | AIStepData | null>(null);
   const [keywordsInput, setKeywordsInput] = useState('');
   const [quickRepliesInput, setQuickRepliesInput] = useState('');
+  const [showTestChat, setShowTestChat] = useState(false);
 
   useEffect(() => {
     if (node) {
@@ -256,6 +260,92 @@ export function NodeEditor({ node, onUpdate, onClose, onDelete }: NodeEditorProp
     );
   };
 
+  const renderAIStepEditor = () => {
+    const data = localData as AIStepData;
+    return (
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Goal
+          </label>
+          <Textarea
+            value={data.goal || ''}
+            onChange={(e) => setLocalData({ ...data, goal: e.target.value })}
+            placeholder="What should the AI accomplish? E.g., 'Determine the user's needs and recommend the right product'"
+            rows={3}
+          />
+          <p className="mt-1 text-xs text-gray-500">
+            Describe what the AI should accomplish in this conversation
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Context (What AI should know)
+          </label>
+          <Textarea
+            value={data.context || ''}
+            onChange={(e) => setLocalData({ ...data, context: e.target.value })}
+            placeholder="We run an online store that sells eco-friendly products. Our product range includes:
+- Home & Kitchen products
+- Personal Care items
+- Sustainable fashion accessories
+
+Our price range is $10-$100. We offer free shipping on orders over $50."
+            rows={8}
+          />
+          <p className="mt-1 text-xs text-gray-500">
+            Give the AI background information about your business, products, services, and any important details
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Max Conversation Turns
+          </label>
+          <Input
+            type="number"
+            min={1}
+            max={50}
+            value={data.maxTurns || 10}
+            onChange={(e) => setLocalData({ ...data, maxTurns: parseInt(e.target.value) || 10 })}
+          />
+          <p className="mt-1 text-xs text-gray-500">
+            Maximum back-and-forth messages before moving to the next step (default: 10)
+          </p>
+        </div>
+
+        {/* Test Chat Section */}
+        <div className="border-t border-gray-200 pt-4">
+          <button
+            type="button"
+            onClick={() => setShowTestChat(!showTestChat)}
+            className="w-full flex items-center justify-between p-3 rounded-lg bg-purple-50 hover:bg-purple-100 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <MessageCircle className="h-4 w-4 text-purple-600" />
+              <span className="text-sm font-medium text-purple-900">Test Chat</span>
+            </div>
+            {showTestChat ? (
+              <ChevronUp className="h-4 w-4 text-purple-600" />
+            ) : (
+              <ChevronDown className="h-4 w-4 text-purple-600" />
+            )}
+          </button>
+
+          {showTestChat && (
+            <div className="mt-3">
+              <AITestChat
+                goal={data.goal || ''}
+                context={data.context || ''}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderEditor = () => {
     switch (node.type) {
       case 'trigger':
@@ -268,6 +358,8 @@ export function NodeEditor({ node, onUpdate, onClose, onDelete }: NodeEditorProp
         return renderDelayEditor();
       case 'action':
         return renderActionEditor();
+      case 'ai_step':
+        return renderAIStepEditor();
       default:
         return <p>Unknown node type</p>;
     }
@@ -285,13 +377,18 @@ export function NodeEditor({ node, onUpdate, onClose, onDelete }: NodeEditorProp
         return 'Edit Delay';
       case 'action':
         return 'Edit Action';
+      case 'ai_step':
+        return 'Edit AI Step';
       default:
         return 'Edit Node';
     }
   };
 
   return (
-    <div className="h-full flex flex-col">
+    <div className={cn(
+      "h-full flex flex-col bg-white border-l border-gray-200",
+      node.type === 'ai_step' ? "w-96" : "w-80"
+    )}>
       {/* Header */}
       <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
         <h3 className="text-sm font-semibold text-gray-900">{getNodeTitle()}</h3>
