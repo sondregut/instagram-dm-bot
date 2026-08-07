@@ -65,6 +65,7 @@ import {
   simulateMindsetConversationApi,
 } from './services/mindsetOperations';
 import { refreshStaleMindsetLeadProfiles } from './services/mindsetProfiles';
+import { shouldRefreshProfilePicture } from './services/instagramProfileLogic';
 
 // ============================================
 // WEBHOOK ENDPOINT
@@ -224,56 +225,69 @@ export const scheduledProfilePictureRefresh = functions.pubsub
 
     for (const account of accounts) {
       try {
-        // Meta's CDN URLs expire after a few days, so refresh before that window.
-        const twoDaysAgo = admin.firestore.Timestamp.fromMillis(Date.now() - 2 * 24 * 60 * 60 * 1000);
-
-        // Get contacts that have a profile picture URL but it's stale
-        const staleContacts = await db.collection('conversations')
+        // Firestore `field == null` queries exclude older documents where the
+        // field is absent entirely. Read this account's bounded contact set and
+        // evaluate missing, failed, and stale profile data in code instead.
+        const contactSnapshot = await db.collection('conversations')
           .where('accountId', '==', account.id)
-          .where('profilePictureUpdatedAt', '<', twoDaysAgo)
-          .limit(50) // Process up to 50 per account per run to avoid rate limits
+          .limit(500)
           .get();
+        const nowMillis = Date.now();
+        const contactsToUpdate = contactSnapshot.docs
+          .filter((doc) => {
+            const data = doc.data();
+            return shouldRefreshProfilePicture(
+              data.profilePictureUpdatedAt?.toMillis?.(),
+              data.profilePictureRefreshAttemptedAt?.toMillis?.(),
+              nowMillis
+            );
+          })
+          .sort((first, second) => {
+            const firstData = first.data();
+            const secondData = second.data();
+            const missingDifference = Number(!secondData.profilePictureUrl)
+              - Number(!firstData.profilePictureUrl);
+            if (missingDifference !== 0) return missingDifference;
+            return (secondData.lastMessageAt?.toMillis?.() || 0)
+              - (firstData.lastMessageAt?.toMillis?.() || 0);
+          })
+          .slice(0, 50); // Bound Meta API work per account and daily run.
 
-        // Also get contacts that have interacted recently but have no profile picture
-        const recentWithoutPic = await db.collection('conversations')
-          .where('accountId', '==', account.id)
-          .where('profilePictureUrl', '==', null)
-          .orderBy('lastMessageAt', 'desc')
-          .limit(20)
-          .get();
-
-        const contactsToUpdate = [
-          ...staleContacts.docs,
-          ...recentWithoutPic.docs,
-        ];
-
-        // Deduplicate
-        const uniqueContacts = new Map();
-        contactsToUpdate.forEach(doc => uniqueContacts.set(doc.id, doc));
-
-        for (const [docId, doc] of uniqueContacts) {
+        for (const doc of contactsToUpdate) {
+          const docId = doc.id;
           const contactData = doc.data();
           const instagramUserId = contactData?.instagramUserId;
 
           if (!instagramUserId) continue;
 
+          const attemptedAt = admin.firestore.Timestamp.now();
           try {
             const userInfo = await getInstagramUser(instagramUserId, account);
 
             if (userInfo?.profile_picture_url) {
               await db.collection('conversations').doc(docId).update({
                 profilePictureUrl: userInfo.profile_picture_url,
-                profilePictureUpdatedAt: admin.firestore.Timestamp.now(),
+                profilePictureUpdatedAt: attemptedAt,
+                profilePictureRefreshAttemptedAt: attemptedAt,
+                username: userInfo.username || contactData.username,
                 // Also update name if we have it
                 ...(userInfo.name && { 'collectedData.name': userInfo.name }),
               });
               totalRefreshed++;
+            } else {
+              await db.collection('conversations').doc(docId).update({
+                profilePictureRefreshAttemptedAt: attemptedAt,
+              });
+              totalFailed++;
             }
 
             // Small delay to avoid rate limits
             await new Promise(resolve => setTimeout(resolve, 200));
           } catch (error) {
             console.error(`Failed to refresh profile for ${instagramUserId}:`, error);
+            await db.collection('conversations').doc(docId).update({
+              profilePictureRefreshAttemptedAt: attemptedAt,
+            }).catch(() => undefined);
             totalFailed++;
           }
         }
