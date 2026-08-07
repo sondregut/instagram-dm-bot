@@ -21,6 +21,7 @@ import {
   constrainMindsetAIReply,
   getDownloadCheckDelayMs,
   getMindsetMilestoneFollowUpDelayMs,
+  getMindsetNoClickFollowUpMessage,
   hasMindsetFollowUpCapacity,
   isWithinMessagingWindow,
   MAX_UNANSWERED_MINDSET_FOLLOW_UPS,
@@ -680,8 +681,9 @@ export async function processMindsetFollowUps(): Promise<number> {
       let nextStage: MindsetStage | null = null;
       let buttons: Array<{ title: string; url: string }> | null = null;
 
-      if (item.type === 'link_reminder' && !lead.downloadClickedAt) {
-        message = 'Just making sure the link did not get buried. Here it is again.';
+      const noClickFollowUpMessage = getMindsetNoClickFollowUpMessage(Boolean(lead.downloadClickedAt));
+      if (item.type === 'link_reminder' && noClickFollowUpMessage) {
+        message = noClickFollowUpMessage;
         buttons = [{ title: 'Download App', url: buildMindsetDownloadRedirectUrl(lead.linkToken) }];
       } else if (item.type === 'download_check' && !lead.appOpenedAt && !lead.firstRepStartedAt) {
         message = 'Quick check, did you manage to download and open Athlete Mindset?';

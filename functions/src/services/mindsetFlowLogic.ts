@@ -5,6 +5,7 @@ export const MESSAGING_WINDOW_MS = 23 * 60 * 60 * 1000;
 export const TEST_DOWNLOAD_CHECK_DELAY_MS = 2 * 60 * 1000;
 export const DOWNLOAD_CHECK_DELAY_MS = 30 * 60 * 1000;
 export const MAX_UNANSWERED_MINDSET_FOLLOW_UPS = 2;
+export const MINDSET_NO_CLICK_FOLLOW_UP_MESSAGE = 'Hey! Did you get a chance to check out Athlete Mindset yet? Would love to hear what you think.';
 
 export type MindsetMilestoneFollowUp = 'use_check' | 'feedback_check';
 
@@ -39,6 +40,10 @@ export const MINDSET_PUBLIC_REPLY_VARIANTS = [
 ];
 
 export const DEFAULT_MINDSET_PUBLIC_REPLY_TEXT = MINDSET_PUBLIC_REPLY_VARIANTS.join('\n');
+
+export function getMindsetNoClickFollowUpMessage(hasTrackedDownloadClick: boolean): string | null {
+  return hasTrackedDownloadClick ? null : MINDSET_NO_CLICK_FOLLOW_UP_MESSAGE;
+}
 
 export function hasMindsetFollowUpCapacity(unansweredFollowUpCount: unknown): boolean {
   const count = typeof unansweredFollowUpCount === 'number'

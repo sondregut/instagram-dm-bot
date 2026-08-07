@@ -11,10 +11,12 @@ import {
   DOWNLOAD_CHECK_DELAY_MS,
   getDownloadCheckDelayMs,
   getMindsetMilestoneFollowUpDelayMs,
+  getMindsetNoClickFollowUpMessage,
   hasMindsetFollowUpCapacity,
   isWithinMessagingWindow,
   MAX_UNANSWERED_MINDSET_FOLLOW_UPS,
   MESSAGING_WINDOW_MS,
+  MINDSET_NO_CLICK_FOLLOW_UP_MESSAGE,
   MINDSET_PUBLIC_REPLY_VARIANTS,
   parseMindsetPublicReplyVariants,
   requiresMindsetHumanHandoff,
@@ -126,6 +128,16 @@ test('allows at most two automated follow-ups without an athlete reply', () => {
   assert.equal(hasMindsetFollowUpCapacity(1), true);
   assert.equal(hasMindsetFollowUpCapacity(2), false);
   assert.equal(hasMindsetFollowUpCapacity(20), false);
+});
+
+test('uses a casual feedback check only before the tracked app link is clicked', () => {
+  assert.equal(
+    getMindsetNoClickFollowUpMessage(false),
+    'Hey! Did you get a chance to check out Athlete Mindset yet? Would love to hear what you think.'
+  );
+  assert.equal(getMindsetNoClickFollowUpMessage(true), null);
+  assert.equal(getMindsetNoClickFollowUpMessage(false), MINDSET_NO_CLICK_FOLLOW_UP_MESSAGE);
+  assert.doesNotMatch(MINDSET_NO_CLICK_FOLLOW_UP_MESSAGE, /—|subscrib|paid/i);
 });
 
 test('silently suppresses handoff fallback copy', () => {
