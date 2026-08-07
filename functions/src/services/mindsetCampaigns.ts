@@ -9,6 +9,7 @@ import {
 } from './mindsetCampaignLogic';
 import {
   containsConfiguredMindsetKeyword,
+  DEFAULT_MINDSET_PUBLIC_REPLY_TEXT,
   getConfiguredMindsetKeyword,
   validateMindsetTestConfiguration,
 } from './mindsetFlowLogic';
@@ -65,7 +66,7 @@ export function runtimeMindsetCampaign(account: InstagramAccount): MindsetCampai
     postIds: [],
     status: mode === 'test' ? 'test' : 'live',
     publicReplyEnabled: true,
-    publicReplyText: 'Sent you the link. Check your DMs.',
+    publicReplyText: DEFAULT_MINDSET_PUBLIC_REPLY_TEXT,
     template: 'athlete_mindset_download',
     isSystem: true,
   };

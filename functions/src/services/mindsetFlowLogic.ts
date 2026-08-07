@@ -30,11 +30,15 @@ export type MindsetReplyIntent =
   | 'human'
   | 'other';
 
-const PUBLIC_REPLIES = [
-  'Sent it 🙌 Check your DMs!',
-  'Just sent it. Check your DMs!',
-  'It should be in your DMs now 🙌',
+export const MINDSET_PUBLIC_REPLY_VARIANTS = [
+  'Got you. Check your DMs!',
+  'I sent you the link. Check your DMs!',
+  'The link is in your DMs. Let me know what you think!',
+  'Just sent the link over. Check your DMs!',
+  'Your link should be waiting in your DMs!',
 ];
+
+export const DEFAULT_MINDSET_PUBLIC_REPLY_TEXT = MINDSET_PUBLIC_REPLY_VARIANTS.join('\n');
 
 export function hasMindsetFollowUpCapacity(unansweredFollowUpCount: unknown): boolean {
   const count = typeof unansweredFollowUpCount === 'number'
@@ -79,9 +83,20 @@ export function containsConfiguredMindsetKeyword(
     .test(normalizedText);
 }
 
-export function chooseMindsetPublicReply(commentId: string): string {
+export function parseMindsetPublicReplyVariants(value?: string): string[] {
+  return Array.from(new Set((value || '')
+    .split(/\r?\n/)
+    .map((reply) => reply.trim())
+    .filter(Boolean)));
+}
+
+export function chooseMindsetPublicReply(commentId: string, configuredReplies?: string): string {
+  const configuredVariants = parseMindsetPublicReplyVariants(configuredReplies);
+  const replies = configuredVariants.length > 0
+    ? configuredVariants
+    : MINDSET_PUBLIC_REPLY_VARIANTS;
   const hash = Array.from(commentId).reduce((sum, char) => sum + char.charCodeAt(0), 0);
-  return PUBLIC_REPLIES[hash % PUBLIC_REPLIES.length];
+  return replies[hash % replies.length];
 }
 
 export function classifyMindsetReply(text: string): MindsetReplyIntent {

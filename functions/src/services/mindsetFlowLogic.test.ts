@@ -4,6 +4,7 @@ import {
   buildMindsetActivationUrl,
   buildMindsetAISystemPrompt,
   buildMindsetAppOpenUrl,
+  chooseMindsetPublicReply,
   classifyMindsetReply,
   containsConfiguredMindsetKeyword,
   DEFAULT_TEST_KEYWORD,
@@ -14,11 +15,37 @@ import {
   isWithinMessagingWindow,
   MAX_UNANSWERED_MINDSET_FOLLOW_UPS,
   MESSAGING_WINDOW_MS,
+  MINDSET_PUBLIC_REPLY_VARIANTS,
+  parseMindsetPublicReplyVariants,
   requiresMindsetHumanHandoff,
   shouldSuppressMindsetAutomatedReply,
   TEST_DOWNLOAD_CHECK_DELAY_MS,
   validateMindsetTestConfiguration,
 } from './mindsetFlowLogic';
+
+test('rotates natural public replies deterministically per comment', () => {
+  const replies = new Set(
+    Array.from({ length: 5 }, (_, index) =>
+      chooseMindsetPublicReply(String.fromCharCode(65 + index)))
+  );
+  assert.deepEqual(replies, new Set(MINDSET_PUBLIC_REPLY_VARIANTS));
+  assert.equal(chooseMindsetPublicReply('same-comment'), chooseMindsetPublicReply('same-comment'));
+  MINDSET_PUBLIC_REPLY_VARIANTS.forEach((reply) => {
+    assert.match(reply, /DMs/i);
+    assert.doesNotMatch(reply, /—/);
+    assert.ok(reply.length <= 180);
+  });
+});
+
+test('uses newline-separated campaign replies when configured', () => {
+  const configured = 'First reply\nSecond reply\nFirst reply\n  Third reply  ';
+  assert.deepEqual(
+    parseMindsetPublicReplyVariants(configured),
+    ['First reply', 'Second reply', 'Third reply']
+  );
+  assert.equal(chooseMindsetPublicReply('a', 'Reply one\nReply two'), 'Reply two');
+  assert.equal(chooseMindsetPublicReply('b', 'Reply one\nReply two'), 'Reply one');
+});
 
 test('defaults to a unique test keyword rather than the live Manychat keyword', () => {
   assert.equal(DEFAULT_TEST_KEYWORD, 'AMDMTEST8472');

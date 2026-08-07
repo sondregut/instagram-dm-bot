@@ -34,6 +34,10 @@ import {
   saveMindsetCampaign,
 } from '@/lib/mindsetData';
 import { isDashboardReviewMode } from '@/lib/mindsetReview';
+import {
+  DEFAULT_MINDSET_PUBLIC_REPLY_TEXT,
+  parseMindsetPublicReplyVariants,
+} from '@/lib/mindsetPublicReplies';
 import { formatRelativeTimestamp } from '@/lib/mindsetPresentation';
 import { cn } from '@/lib/utils';
 
@@ -54,7 +58,7 @@ const emptyForm: CampaignFormState = {
   postIds: [],
   postMode: 'any',
   publicReplyEnabled: true,
-  publicReplyText: 'Sent you the link. Check your DMs.',
+  publicReplyText: DEFAULT_MINDSET_PUBLIC_REPLY_TEXT,
   currentStatus: 'draft',
 };
 
@@ -110,11 +114,13 @@ export default function CampaignsPage() {
   const keyword = form.keyword.trim().toUpperCase();
   const runtimeMode = data?.runtime.mode || 'off';
   const keywordValid = /^[A-Z0-9_-]{2,40}$/.test(keyword);
+  const publicReplyVariants = parseMindsetPublicReplyVariants(form.publicReplyText);
   const formValid = form.name.trim().length >= 2 && keywordValid
     && (form.postMode === 'any' || form.postIds.length > 0)
     && (!form.publicReplyEnabled || (
-      form.publicReplyText.trim().length >= 2
-      && form.publicReplyText.trim().length <= 180
+      publicReplyVariants.length >= 1
+      && publicReplyVariants.length <= 5
+      && publicReplyVariants.every((reply) => reply.length >= 2 && reply.length <= 180)
     ));
   const canEnableTest = formValid
     && keyword !== 'MINDSET'
@@ -336,6 +342,7 @@ function CampaignEditor({
   onClose: () => void;
 }) {
   const keyword = form.keyword.trim().toUpperCase();
+  const publicReplyVariants = parseMindsetPublicReplyVariants(form.publicReplyText);
   const testBlockedByKeyword = keyword === 'MINDSET';
   const productionMode = ['mindset', 'full'].includes(runtimeMode);
 
@@ -446,25 +453,26 @@ function CampaignEditor({
           {form.publicReplyEnabled && (
             <div className="mt-4 space-y-3">
               <label htmlFor="public-comment-reply" className="block">
-                <span className="text-xs font-semibold text-slate-700">Public comment reply</span>
+                <span className="text-xs font-semibold text-slate-700">Public comment replies</span>
                 <textarea
                   id="public-comment-reply"
                   value={form.publicReplyText}
                   onChange={(event) => setForm((current) => ({ ...current, publicReplyText: event.target.value }))}
-                  rows={2}
-                  maxLength={180}
+                  rows={5}
+                  maxLength={904}
                   className="mt-2 w-full resize-none rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm leading-5 text-slate-900 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
                 />
               </label>
               <div className="flex items-center justify-between gap-3 text-[11px] text-slate-500">
-                <span>People see this underneath their comment.</span>
-                <span className="font-mono">{form.publicReplyText.length}/180</span>
+                <span>Add one reply per line. The bot rotates between up to five.</span>
+                <span className="font-mono">{publicReplyVariants.length}/5 replies</span>
               </div>
               <div className="rounded-xl border border-slate-200 bg-white p-3">
                 <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Post comment preview</p>
                 <div className="mt-3 space-y-2 text-xs">
                   <p><span className="font-semibold text-slate-900">@athlete</span> <span className="text-slate-600">{keyword || 'KEYWORD'}</span></p>
-                  <p className="border-l-2 border-emerald-500 pl-3"><span className="font-semibold text-slate-900">@sondre_pv</span> <span className="text-slate-600">{form.publicReplyText || 'Your public reply appears here.'}</span></p>
+                  <p className="border-l-2 border-emerald-500 pl-3"><span className="font-semibold text-slate-900">@sondre_pv</span> <span className="text-slate-600">{publicReplyVariants[0] || 'Your public reply appears here.'}</span></p>
+                  {publicReplyVariants.length > 1 && <p className="pl-3 text-[11px] text-emerald-700">Rotates between {publicReplyVariants.length} replies</p>}
                 </div>
               </div>
             </div>
@@ -535,6 +543,7 @@ function CampaignEditor({
 
 function CampaignRow({ campaign, posts, onEdit, onPause }: { campaign: MindsetCampaign; posts: InstagramPost[]; onEdit: () => void; onPause: () => void }) {
   const active = campaign.status === 'test' || campaign.status === 'live';
+  const publicReplyCount = parseMindsetPublicReplyVariants(campaign.publicReplyText).length;
   const previewPost = campaign.postIds
     .map((postId) => posts.find((post) => post.id === postId))
     .find((post): post is InstagramPost => Boolean(post));
@@ -567,7 +576,9 @@ function CampaignRow({ campaign, posts, onEdit, onPause }: { campaign: MindsetCa
           </p>
           <p className="mt-1 line-clamp-1 text-[11px] text-slate-500">
             {campaign.publicReplyEnabled
-              ? `Public reply: “${campaign.publicReplyText}”`
+              ? publicReplyCount > 1
+                ? `Public reply rotates between ${publicReplyCount} responses`
+                : `Public reply: “${campaign.publicReplyText}”`
               : 'No public comment reply — private DM only'}
           </p>
           <p className="mt-1 text-[11px] text-slate-400">{campaign.updatedAt ? `Updated ${formatRelativeTimestamp(campaign.updatedAt)}` : 'Controlled by the bot runtime'}</p>

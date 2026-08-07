@@ -244,12 +244,12 @@ export async function handleMindsetComment(
   }
 
   // Reply publicly only after the private message succeeded so we never claim a DM was sent when it was not.
-  const configuredPublicReply = campaign.publicReplyEnabled === false
+  const publicReply = campaign.publicReplyEnabled === false
     ? null
-    : campaign.publicReplyText?.trim() || chooseMindsetPublicReply(event.id);
-  const publicReply = configuredPublicReply
-    ? constrainMindsetAIReply(configuredPublicReply, 220)
-    : null;
+    : constrainMindsetAIReply(
+      chooseMindsetPublicReply(event.id, campaign.publicReplyText),
+      220
+    );
   const publicReplySent = publicReply
     ? await replyToComment(event.id, publicReply, account)
     : null;

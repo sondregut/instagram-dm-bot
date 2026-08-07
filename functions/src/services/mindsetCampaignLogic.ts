@@ -37,9 +37,15 @@ export function validateMindsetCampaignInput(
   }
 
   if (input.publicReplyEnabled === true) {
-    const publicReplyText = input.publicReplyText?.trim() || '';
-    if (publicReplyText.length < 2 || publicReplyText.length > 180) {
-      errors.push('Public comment reply must be between 2 and 180 characters');
+    const publicReplies = Array.from(new Set((input.publicReplyText || '')
+      .split(/\r?\n/)
+      .map((reply) => reply.trim())
+      .filter(Boolean)));
+    if (publicReplies.length < 1 || publicReplies.length > 5) {
+      errors.push('Public comment reply list must include between 1 and 5 entries');
+    }
+    if (publicReplies.some((reply) => reply.length < 2 || reply.length > 180)) {
+      errors.push('Each public comment reply must be between 2 and 180 characters');
     }
   }
 

@@ -83,4 +83,23 @@ test('validates the optional public comment reply independently from the DM', ()
     publicReplyText: '',
   }, 'test');
   assert.ok(errors.some((error) => error.includes('Public comment reply')));
+
+  assert.deepEqual(validateMindsetCampaignInput({
+    name: 'Rotating replies',
+    keyword: 'FOCUS',
+    postIds: ['post_2'],
+    status: 'draft',
+    publicReplyEnabled: true,
+    publicReplyText: 'Got you. Check your DMs!\nI sent you the link. Check your DMs!',
+  }, 'test'), []);
+
+  const tooManyReplies = validateMindsetCampaignInput({
+    name: 'Too many replies',
+    keyword: 'FOCUS',
+    postIds: ['post_2'],
+    status: 'draft',
+    publicReplyEnabled: true,
+    publicReplyText: ['One', 'Two', 'Three', 'Four', 'Five', 'Six'].join('\n'),
+  }, 'test');
+  assert.ok(tooManyReplies.some((error) => error.includes('between 1 and 5')));
 });

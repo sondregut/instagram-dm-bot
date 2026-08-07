@@ -7,6 +7,7 @@ import { generateIsolatedAIResponseWithStatus } from './ai';
 import { sendInstagramDM } from './instagram';
 import {
   buildMindsetActivationUrl,
+  DEFAULT_MINDSET_PUBLIC_REPLY_TEXT,
   isWithinMessagingWindow,
   MAX_UNANSWERED_MINDSET_FOLLOW_UPS,
   MESSAGING_WINDOW_MS,
@@ -347,7 +348,7 @@ function serializeCampaign(campaign: MindsetCampaign) {
     postIds: campaign.postIds || [],
     status: campaign.status,
     publicReplyEnabled: campaign.publicReplyEnabled !== false,
-    publicReplyText: campaign.publicReplyText || 'Sent you the link. Check your DMs.',
+    publicReplyText: campaign.publicReplyText || DEFAULT_MINDSET_PUBLIC_REPLY_TEXT,
     template: campaign.template,
     isSystem: campaign.isSystem === true,
     createdAt: toIso(campaign.createdAt),
@@ -725,7 +726,7 @@ export const saveMindsetCampaignApi = functions.https.onCall(async (data, contex
   const publicReplyEnabled = data?.publicReplyEnabled !== false;
   const publicReplyText = typeof data?.publicReplyText === 'string'
     ? data.publicReplyText.trim()
-    : 'Sent you the link. Check your DMs.';
+    : DEFAULT_MINDSET_PUBLIC_REPLY_TEXT;
   const mode = getBotMode();
   const validationErrors = validateMindsetCampaignInput({
     name,

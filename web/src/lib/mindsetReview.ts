@@ -8,6 +8,7 @@ import {
   MindsetInboxResult,
   MindsetOverview,
 } from './firebase';
+import { DEFAULT_MINDSET_PUBLIC_REPLY_TEXT } from './mindsetPublicReplies';
 
 const REVIEW_CAMPAIGNS_KEY = 'athlete-mindset-review-campaigns';
 const REVIEW_CONVERSATIONS_KEY = 'athlete-mindset-review-conversations-v3';
@@ -254,7 +255,7 @@ const reviewSystemCampaign: MindsetCampaign = {
   postIds: [],
   status: 'test',
   publicReplyEnabled: true,
-  publicReplyText: 'Sent you the link. Check your DMs.',
+  publicReplyText: DEFAULT_MINDSET_PUBLIC_REPLY_TEXT,
   template: 'athlete_mindset_download',
   isSystem: true,
   createdAt: null,
@@ -269,7 +270,7 @@ const initialCustomCampaigns: MindsetCampaign[] = [
     postIds: [],
     status: 'draft',
     publicReplyEnabled: true,
-    publicReplyText: 'Sent you the link. Check your DMs.',
+    publicReplyText: DEFAULT_MINDSET_PUBLIC_REPLY_TEXT,
     template: 'athlete_mindset_download',
     isSystem: false,
     createdAt: minutesAgo(1440),
@@ -287,7 +288,7 @@ function readStoredReviewCampaigns(): MindsetCampaign[] {
       .map((campaign) => ({
         ...campaign,
         publicReplyEnabled: campaign.publicReplyEnabled !== false,
-        publicReplyText: campaign.publicReplyText || 'Sent you the link. Check your DMs.',
+        publicReplyText: campaign.publicReplyText || DEFAULT_MINDSET_PUBLIC_REPLY_TEXT,
       }));
   } catch {
     return initialCustomCampaigns;
@@ -422,9 +423,13 @@ export async function saveReviewCampaign(input: MindsetCampaignInput): Promise<M
     throw new Error('Live activation is disabled while the bot is in test mode.');
   }
   if (input.publicReplyEnabled) {
-    const publicReplyLength = input.publicReplyText.trim().length;
-    if (publicReplyLength < 2 || publicReplyLength > 180) {
-      throw new Error('Public comment reply must be between 2 and 180 characters.');
+    const publicReplies = Array.from(new Set(input.publicReplyText
+      .split(/\r?\n/)
+      .map((reply) => reply.trim())
+      .filter(Boolean)));
+    if (publicReplies.length < 1 || publicReplies.length > 5
+        || publicReplies.some((reply) => reply.length < 2 || reply.length > 180)) {
+      throw new Error('Add between 1 and 5 public replies, with each reply under 180 characters.');
     }
   }
   const campaigns = readStoredReviewCampaigns();
