@@ -2,7 +2,15 @@ import { db, InstagramAccount, InstagramConfig } from '../firebase';
 import { checkRateLimit, recordSentMessage } from '../utils/rateLimiter';
 import { truncateMessage } from '../utils/validators';
 import { decrypt } from '../utils/encryption';
-import { getAccountByInstagramId, getAccountAccessToken } from './accounts';
+import { getAccountById, getAccountAccessToken } from './accounts';
+import {
+  InstagramUserProfile,
+  normalizeInstagramUserProfile,
+} from './instagramProfileLogic';
+import {
+  buildMindsetConversationId,
+  isMindsetConversationIdentityMatch,
+} from './mindsetConversationIsolation';
 
 const GRAPH_API_VERSION = 'v21.0';
 // Instagram Business Login tokens use graph.instagram.com
@@ -78,7 +86,7 @@ async function graphRequest(
 
   if (body && method === 'POST') {
     options.body = JSON.stringify(body);
-    console.log(`[GraphAPI] Request body:`, JSON.stringify(body));
+    console.log('[GraphAPI] Request body prepared');
   }
 
   try {
@@ -86,10 +94,8 @@ async function graphRequest(
     const data = await response.json();
 
     console.log(`[GraphAPI] Response status: ${response.status}`);
-    console.log(`[GraphAPI] Response data:`, JSON.stringify(data));
-
     if (!response.ok) {
-      console.error('[GraphAPI] Error:', data);
+      console.error('[GraphAPI] Request failed:', data.error?.code || response.status);
       return {
         success: false,
         error: data.error?.message || 'Unknown API error',
@@ -115,7 +121,8 @@ async function graphRequest(
 export async function sendInstagramDM(
   recipientId: string,
   message: string,
-  account?: InstagramAccount
+  account?: InstagramAccount,
+  context?: { conversationId?: string }
 ): Promise<boolean> {
   console.log(`[Instagram] Attempting to send DM to ${recipientId}`);
 
@@ -124,7 +131,13 @@ export async function sendInstagramDM(
   if (!rateLimit.allowed) {
     console.log(`Rate limit reached. Remaining: ${rateLimit.remaining}, resets at: ${rateLimit.resetAt}`);
     // Queue for later delivery
-    await queueMessage(recipientId, message, account?.id, account?.userId);
+    await queueMessage(
+      recipientId,
+      message,
+      account?.id,
+      account?.userId,
+      context?.conversationId
+    );
     return false;
   }
 
@@ -148,8 +161,6 @@ export async function sendInstagramDM(
       instagramAccountId = config.instagramAccountId;
       console.log('[Instagram] Using legacy config');
     }
-
-    console.log(`[Instagram] Access token starts with: ${accessToken?.substring(0, 20)}...`);
 
     const truncatedMessage = truncateMessage(message);
 
@@ -276,18 +287,130 @@ export async function sendQuickReplyDM(
   return false;
 }
 
+type InstagramRecipient = { id: string } | { comment_id: string };
+
+async function sendStructuredInstagramMessage(
+  recipient: InstagramRecipient,
+  message: object,
+  account: InstagramAccount
+): Promise<boolean> {
+  const rateLimit = await checkRateLimit(account.id);
+  if (!rateLimit.allowed) {
+    console.warn(`[Instagram] Structured message blocked by rate limit for account ${account.id}`);
+    return false;
+  }
+
+  const accessToken = await getAccessToken(account);
+  const isInstagramToken = accessToken.startsWith('IGAA') || accessToken.startsWith('IG');
+  const body = { recipient, message };
+  const endpoints = ['/me/messages', `/${account.instagramAccountId}/messages`];
+
+  for (const endpoint of endpoints) {
+    const result = await graphRequest(endpoint, accessToken, 'POST', body, isInstagramToken);
+    if (result.success) {
+      const recipientKey = 'id' in recipient ? recipient.id : recipient.comment_id;
+      await recordSentMessage(recipientKey, 'dm', account.id);
+      return true;
+    }
+  }
+
+  // Some older Facebook-login connections require the Facebook Graph host.
+  const fallback = await graphRequest(
+    `/${account.instagramAccountId}/messages`,
+    accessToken,
+    'POST',
+    body,
+    !isInstagramToken
+  );
+
+  if (fallback.success) {
+    const recipientKey = 'id' in recipient ? recipient.id : recipient.comment_id;
+    await recordSentMessage(recipientKey, 'dm', account.id);
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Send the one private reply allowed from an Instagram comment. The quick
+ * reply opens the normal messaging window only after the person taps it.
+ */
+export async function sendInstagramPrivateReply(
+  commentId: string,
+  message: string,
+  quickReplies: { title: string; payload: string }[],
+  account: InstagramAccount
+): Promise<boolean> {
+  return sendStructuredInstagramMessage(
+    { comment_id: commentId },
+    {
+      text: truncateMessage(message),
+      quick_replies: quickReplies.map((reply) => ({
+        content_type: 'text',
+        title: reply.title.substring(0, 20),
+        payload: reply.payload,
+      })),
+    },
+    account
+  );
+}
+
+export async function sendInstagramQuickReplyDM(
+  recipientId: string,
+  message: string,
+  quickReplies: { title: string; payload: string }[],
+  account: InstagramAccount
+): Promise<boolean> {
+  return sendStructuredInstagramMessage(
+    { id: recipientId },
+    {
+      text: truncateMessage(message),
+      quick_replies: quickReplies.map((reply) => ({
+        content_type: 'text',
+        title: reply.title.substring(0, 20),
+        payload: reply.payload,
+      })),
+    },
+    account
+  );
+}
+
+export async function sendInstagramButtonDM(
+  recipientId: string,
+  title: string,
+  buttons: { title: string; url: string }[],
+  account: InstagramAccount
+): Promise<boolean> {
+  return sendStructuredInstagramMessage(
+    { id: recipientId },
+    {
+      attachment: {
+        type: 'template',
+        payload: {
+          template_type: 'generic',
+          elements: [{
+            title: title.substring(0, 80),
+            buttons: buttons.slice(0, 3).map((button) => ({
+              type: 'web_url',
+              title: button.title.substring(0, 20),
+              url: button.url,
+            })),
+          }],
+        },
+      },
+    },
+    account
+  );
+}
+
 /**
  * Get Instagram user profile (including profile picture)
  */
 export async function getInstagramUser(
   userId: string,
   account?: InstagramAccount
-): Promise<{
-  id: string;
-  username: string;
-  name?: string;
-  profile_picture_url?: string;
-} | null> {
+): Promise<InstagramUserProfile | null> {
   let accessToken: string;
 
   if (account) {
@@ -301,38 +424,37 @@ export async function getInstagramUser(
   // Detect token type
   const isInstagramToken = accessToken?.startsWith('IGAA') || accessToken?.startsWith('IG');
 
-  // Try Instagram API first for Instagram tokens
-  // Note: profile_picture_url is only available for users who have interacted with the account
-  const result = await graphRequest(
-    `/${userId}?fields=id,username,name,profile_picture_url`,
-    accessToken,
-    'GET',
-    undefined,
-    isInstagramToken
-  );
+  // Meta's messaging-user profile API currently returns profile_pic. Try the
+  // matching Graph host first, then retain the older field as a compatibility
+  // fallback for accounts still using Facebook Login.
+  const profileFields = ['profile_pic', 'profile_picture_url'] as const;
+  const graphHosts = [isInstagramToken, !isInstagramToken];
+  let lastError = 'Unknown profile API error';
 
-  if (result.success && result.data) {
-    console.log(`[Instagram] Got user info for ${userId}: @${result.data.username}${result.data.profile_picture_url ? ' (with profile pic)' : ''}`);
-    return result.data;
+  for (const profileField of profileFields) {
+    for (const useInstagramApi of graphHosts) {
+      const result = await graphRequest(
+        `/${userId}?fields=id,username,name,${profileField}`,
+        accessToken,
+        'GET',
+        undefined,
+        useInstagramApi
+      );
+
+      if (result.success && result.data) {
+        const profile = normalizeInstagramUserProfile(result.data);
+        if (profile) {
+          console.log(`[Instagram] Got user info for ${userId}: @${profile.username}${profile.profile_picture_url ? ' (with profile pic)' : ''}`);
+          return profile;
+        }
+        lastError = 'Profile response was missing an ID or username';
+      } else {
+        lastError = result.error || lastError;
+      }
+    }
   }
 
-  console.log(`[Instagram] Failed to get user info for ${userId}: ${result.error}`);
-
-  // Try the other API as fallback
-  const fallbackResult = await graphRequest(
-    `/${userId}?fields=id,username,name,profile_picture_url`,
-    accessToken,
-    'GET',
-    undefined,
-    !isInstagramToken
-  );
-
-  if (fallbackResult.success && fallbackResult.data) {
-    console.log(`[Instagram] Got user info via fallback for ${userId}: @${fallbackResult.data.username}${fallbackResult.data.profile_picture_url ? ' (with profile pic)' : ''}`);
-    return fallbackResult.data;
-  }
-
-  console.log(`[Instagram] All attempts to get user info failed for ${userId}`);
+  console.log(`[Instagram] All attempts to get user info failed for ${userId}: ${lastError}`);
   return null;
 }
 
@@ -421,13 +543,15 @@ async function queueMessage(
   recipientId: string,
   message: string,
   accountId?: string,
-  userId?: string
+  userId?: string,
+  conversationId?: string
 ): Promise<void> {
   await db.collection('message_queue').add({
     recipientId,
     message,
     accountId: accountId || null,
     userId: userId || null,
+    conversationId: conversationId || null,
     status: 'pending',
     createdAt: new Date(),
     attempts: 0,
@@ -458,7 +582,22 @@ export async function processMessageQueue(accountId?: string): Promise<number> {
   let processed = 0;
 
   for (const doc of queue.docs) {
-    const { recipientId, message, accountId: msgAccountId, attempts } = doc.data();
+    const {
+      recipientId,
+      message,
+      accountId: msgAccountId,
+      userId: msgOwnerUserId,
+      conversationId,
+      attempts,
+    } = doc.data();
+
+    if (typeof recipientId !== 'string'
+        || !recipientId
+        || typeof message !== 'string'
+        || !message) {
+      await doc.ref.update({ status: 'failed_invalid_target', failedAt: new Date() });
+      continue;
+    }
 
     // Check rate limit before each send
     const currentLimit = await checkRateLimit(msgAccountId);
@@ -469,11 +608,34 @@ export async function processMessageQueue(accountId?: string): Promise<number> {
     // Get account if specified
     let account: InstagramAccount | undefined;
     if (msgAccountId) {
-      const acc = await getAccountByInstagramId(msgAccountId);
-      if (acc) account = acc;
+      const acc = await getAccountById(msgAccountId);
+      if (!acc || acc.id !== msgAccountId || acc.userId !== msgOwnerUserId) {
+        await doc.ref.update({ status: 'cancelled_account_mismatch', failedAt: new Date() });
+        continue;
+      }
+      account = acc;
     }
 
-    const sent = await sendInstagramDM(recipientId, message, account);
+    if (conversationId) {
+      if (!account
+          || conversationId !== buildMindsetConversationId(account.id, recipientId)) {
+        await doc.ref.update({ status: 'cancelled_isolation_violation', failedAt: new Date() });
+        continue;
+      }
+      const leadSnapshot = await db.collection('mindset_leads').doc(conversationId).get();
+      const lead = leadSnapshot.data();
+      if (!leadSnapshot.exists || !lead || !isMindsetConversationIdentityMatch(lead, {
+        documentId: conversationId,
+        accountId: account.id,
+        instagramUserId: recipientId,
+        ownerUserId: account.userId,
+      })) {
+        await doc.ref.update({ status: 'cancelled_isolation_violation', failedAt: new Date() });
+        continue;
+      }
+    }
+
+    const sent = await sendInstagramDM(recipientId, message, account, { conversationId });
 
     if (sent) {
       await doc.ref.update({ status: 'sent', sentAt: new Date() });

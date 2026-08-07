@@ -7,17 +7,13 @@ import { generateToken } from '../utils/encryption';
 // Instagram Graph API version
 const GRAPH_API_VERSION = 'v21.0';
 
-// OAuth Configuration from environment
-const getOAuthConfig = () => {
-  const config = functions.config();
-  return {
-    // Instagram App ID (from Instagram API setup, not Facebook App ID)
-    appId: config.instagram?.app_id || process.env.INSTAGRAM_APP_ID,
-    appSecret: config.instagram?.app_secret || process.env.INSTAGRAM_APP_SECRET,
-    redirectUri: config.app?.oauth_redirect_uri || process.env.OAUTH_REDIRECT_URI,
-    webUrl: config.app?.web_url || process.env.WEB_URL || 'https://instagram-dm-bot-app.web.app',
-  };
-};
+// OAuth Configuration from environment variables (functions/.env)
+const getOAuthConfig = () => ({
+  appId: process.env.INSTAGRAM_APP_ID || '',
+  appSecret: process.env.INSTAGRAM_APP_SECRET || '',
+  redirectUri: process.env.OAUTH_REDIRECT_URI || '',
+  webUrl: process.env.WEB_URL || 'https://instagram-dm-bot-app.web.app',
+});
 
 // Required permissions for Instagram Business Login
 // These must match permissions enabled in Meta App Dashboard
@@ -42,7 +38,7 @@ export const getInstagramOAuthUrl = functions.https.onCall(async (data, context)
   if (!config.appId || !config.redirectUri) {
     throw new functions.https.HttpsError(
       'failed-precondition',
-      'OAuth not configured. Please set instagram.app_id and app.oauth_redirect_uri'
+      'OAuth not configured. Set INSTAGRAM_APP_ID and OAUTH_REDIRECT_URI in functions/.env'
     );
   }
 

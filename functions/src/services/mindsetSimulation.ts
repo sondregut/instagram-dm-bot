@@ -1,0 +1,81 @@
+import {
+  buildMindsetActionPlan,
+  MindsetButton,
+  MindsetQuickReply,
+  MindsetStage,
+} from './mindsetConversationEngine';
+import {
+  buildMindsetAISystemPrompt,
+  classifyMindsetReply,
+  constrainMindsetAIReply,
+  requiresMindsetHumanHandoff,
+  shouldSuppressMindsetAutomatedReply,
+} from './mindsetFlowLogic';
+
+export interface MindsetSimulationMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface MindsetSimulationResult {
+  reply: string;
+  nextStage: MindsetStage;
+  quickReplies: MindsetQuickReply[];
+  buttons: MindsetButton[];
+  createsHandoff: boolean;
+}
+
+export type MindsetSimulationAIGenerator = (
+  systemPrompt: string,
+  history: MindsetSimulationMessage[],
+  userMessage: string
+) => Promise<{ text: string; usedAI: boolean }>;
+
+export async function simulateMindsetTurn(
+  stage: MindsetStage,
+  message: string,
+  activationUrl: string,
+  history: MindsetSimulationMessage[] = [],
+  generateAI?: MindsetSimulationAIGenerator,
+  quickReplyPayload?: string
+): Promise<MindsetSimulationResult> {
+  const userMessage = message.trim();
+  if (!userMessage) throw new Error('A test message is required');
+
+  const quickReplyAction = quickReplyPayload?.startsWith('mindset:')
+    ? quickReplyPayload.split(':')[1]
+    : null;
+  const action = quickReplyAction || (requiresMindsetHumanHandoff(userMessage)
+    ? 'human'
+    : classifyMindsetReply(userMessage));
+  if (action !== 'other') {
+    const plan = buildMindsetActionPlan(action, stage, activationUrl);
+    if (plan) {
+      return {
+        reply: plan.message,
+        nextStage: plan.nextStage,
+        quickReplies: plan.quickReplies || [],
+        buttons: plan.buttons || [],
+        createsHandoff: plan.createsHandoff === true,
+      };
+    }
+  }
+
+  const aiResult = generateAI
+    ? await generateAI(
+      buildMindsetAISystemPrompt(stage),
+      [...history.slice(-8), { role: 'user', content: userMessage }],
+      userMessage
+    )
+    : { text: '', usedAI: false };
+  const reply = constrainMindsetAIReply(aiResult.text);
+  const createsHandoff = !aiResult.usedAI || shouldSuppressMindsetAutomatedReply(reply);
+
+  return {
+    reply: createsHandoff ? '' : reply,
+    nextStage: createsHandoff ? 'human_handoff' : 'ai_follow_up',
+    quickReplies: [],
+    buttons: [],
+    createsHandoff,
+  };
+}

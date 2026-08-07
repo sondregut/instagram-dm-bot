@@ -1,1081 +1,152 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Settings, Link2, Unlink, Bot, Brain, Plus, Trash2, Globe, MessageSquare, CheckCircle, AlertCircle, RefreshCw, Sparkles, X, Loader2 } from 'lucide-react';
-import { cloudFunctions, InstagramAccount, AIPersonality, AccountSettings, KnowledgeBase, KnowledgeFAQ } from '@/lib/firebase';
-import { Button } from '@/components/Button';
-import { Input } from '@/components/Input';
-import { Textarea } from '@/components/Textarea';
-import { Select } from '@/components/Select';
-import { Toggle } from '@/components/Toggle';
-import { useAccount, AccountCard, NoAccountPrompt } from '@/components/AccountSelector';
-import { styles } from '@/lib/styles';
+import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
+import {
+  ArrowRight,
+  Brain,
+  CheckCircle,
+  CloudArrowUp,
+  Code,
+  Fingerprint,
+  InstagramLogo,
+  LinkSimple,
+  LockKey,
+  Robot,
+  ShieldCheck,
+  UserCircle,
+  Warning,
+} from '@phosphor-icons/react';
+import { useAccount } from '@/components/AccountSelector';
+import { useAuth } from '@/hooks/useAuth';
+import { loadMindsetOverview } from '@/lib/mindsetData';
+import { isDashboardReviewMode } from '@/lib/mindsetReview';
 import { cn } from '@/lib/utils';
 
-type SettingsTab = 'accounts' | 'ai' | 'knowledge' | 'notifications';
-
 export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('accounts');
-  const { accounts, selectedAccount, refetchAccounts, isLoading: accountsLoading } = useAccount();
-  const queryClient = useQueryClient();
-
-  const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
-    { id: 'accounts', label: 'Accounts', icon: <Link2 className="h-4 w-4" /> },
-    { id: 'ai', label: 'AI Personality', icon: <Bot className="h-4 w-4" /> },
-    { id: 'knowledge', label: 'Knowledge Base', icon: <Brain className="h-4 w-4" /> },
-    { id: 'notifications', label: 'Settings', icon: <Settings className="h-4 w-4" /> },
-  ];
-
-  return (
-    <div className="max-w-4xl">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-        <p className="text-gray-500 mt-1">Manage your Instagram accounts and AI configuration</p>
-      </div>
-
-      {/* Tab Navigation */}
-      <div className="flex border-b border-gray-200 mb-6">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={cn(
-              'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
-              activeTab === tab.id
-                ? 'border-accent text-accent'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            )}
-          >
-            {tab.icon}
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab Content */}
-      {activeTab === 'accounts' && <AccountsTab />}
-      {activeTab === 'ai' && <AIPersonalityTab />}
-      {activeTab === 'knowledge' && <KnowledgeBaseTab />}
-      {activeTab === 'notifications' && <NotificationSettingsTab />}
-    </div>
-  );
-}
-
-// ============================================
-// ACCOUNTS TAB
-// ============================================
-
-function AccountsTab() {
-  const { accounts, refetchAccounts, isLoading } = useAccount();
-  const [connectingAccount, setConnectingAccount] = useState(false);
-
-  const connectMutation = useMutation({
-    mutationFn: async () => {
-      const result = await cloudFunctions.getInstagramOAuthUrl({
-        redirectUrl: window.location.origin + '/settings',
-      });
-      return result.data;
-    },
-    onSuccess: (data) => {
-      window.location.href = data.url;
-    },
-    onError: (error) => {
-      console.error('Failed to get OAuth URL:', error);
-      setConnectingAccount(false);
-    },
+  const { selectedAccount, accounts, isLoading: accountsLoading } = useAccount();
+  const { user } = useAuth();
+  const reviewMode = isDashboardReviewMode();
+  const { data, isLoading } = useQuery({
+    queryKey: ['mindset-overview', selectedAccount?.id],
+    queryFn: () => loadMindsetOverview(selectedAccount!.id),
+    enabled: Boolean(selectedAccount),
   });
 
-  const disconnectMutation = useMutation({
-    mutationFn: async (accountId: string) => {
-      return cloudFunctions.disconnectInstagramAccount({ accountId });
-    },
-    onSuccess: () => {
-      refetchAccounts();
-    },
-  });
-
-  const handleConnect = () => {
-    setConnectingAccount(true);
-    connectMutation.mutate();
-  };
-
-  if (isLoading) {
-    return <LoadingState />;
-  }
+  if (accountsLoading) return <div className="h-[600px] animate-pulse rounded-2xl bg-white" />;
 
   return (
-    <div className="space-y-5">
-      {/* Connected Accounts */}
-      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-3">
-            <Link2 className="h-5 w-5 text-gray-500" />
-            <div>
-              <h2 className="font-semibold text-gray-900">Connected Accounts</h2>
-              <p className="text-sm text-gray-500">Manage your Instagram Business accounts</p>
-            </div>
+    <div className="space-y-6">
+      <header>
+        <p className="text-sm font-semibold text-emerald-700">Workspace control</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em] text-slate-950">Settings</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">The important safety, account, AI, and tracking configuration for the Athlete Mindset DM bot.</p>
+      </header>
+
+      {reviewMode && (
+        <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          <Code size={19} weight="bold" className="mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="font-semibold">You are reviewing the local dashboard build.</p>
+            <p className="mt-0.5 text-xs leading-5 text-emerald-800">These screens use sample data and have not replaced the live Vercel dashboard.</p>
           </div>
-          <Button onClick={handleConnect} loading={connectMutation.isPending || connectingAccount}>
-            <Plus className="h-4 w-4 mr-1.5" />
-            Connect Account
-          </Button>
         </div>
-
-        {accounts.length === 0 ? (
-          <NoAccountPrompt onConnectClick={handleConnect} />
-        ) : (
-          <div className="space-y-2">
-            {accounts.map((account) => (
-              <div
-                key={account.id}
-                className="flex items-center justify-between p-3 rounded-xl border border-gray-200"
-              >
-                <div className="flex items-center gap-3">
-                  <div className={cn(styles.avatar.base, styles.avatar.sizes.md)}>
-                    {account.username.charAt(0).toUpperCase()}
-                  </div>
-                  <div>
-                    <p className="font-semibold text-gray-900">@{account.username}</p>
-                    <div className="flex items-center gap-2 text-sm text-gray-500">
-                      {account.pageName && <span>{account.pageName}</span>}
-                      <StatusBadge status={account.connectionStatus} />
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {account.connectionStatus === 'expired' && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => handleConnect()}
-                    >
-                      <RefreshCw className="h-3.5 w-3.5 mr-1" />
-                      Reconnect
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => disconnectMutation.mutate(account.id)}
-                    loading={disconnectMutation.isPending}
-                  >
-                    <Unlink className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Requirements Info */}
-      <div className={styles.banner.info}>
-        <h3 className="font-semibold text-gray-900 mb-3">Requirements for Connecting</h3>
-        <ul className="space-y-2 text-sm text-gray-600">
-          <li className="flex items-start gap-2">
-            <CheckCircle className="h-4 w-4 mt-0.5 text-status-info flex-shrink-0" />
-            <span>Instagram Business or Creator account</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <CheckCircle className="h-4 w-4 mt-0.5 text-status-info flex-shrink-0" />
-            <span>Connected to a Facebook Page</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <CheckCircle className="h-4 w-4 mt-0.5 text-status-info flex-shrink-0" />
-            <span>Admin access to the Facebook Page</span>
-          </li>
-        </ul>
-      </div>
-    </div>
-  );
-}
-
-// ============================================
-// AI PERSONALITY TAB
-// ============================================
-
-function AIPersonalityTab() {
-  const { selectedAccount, refetchAccounts } = useAccount();
-  const [personality, setPersonality] = useState<Partial<AIPersonality>>({});
-  const [hasChanges, setHasChanges] = useState(false);
-  const [showGenerateModal, setShowGenerateModal] = useState(false);
-
-  // Fetch knowledge base to get website URL if available
-  const { data: knowledgeBase } = useQuery({
-    queryKey: ['knowledgeBase', selectedAccount?.id],
-    queryFn: async () => {
-      if (!selectedAccount) return null;
-      const result = await cloudFunctions.getKnowledgeBase({ accountId: selectedAccount.id });
-      return result.data;
-    },
-    enabled: !!selectedAccount,
-  });
-
-  useEffect(() => {
-    if (selectedAccount?.aiPersonality) {
-      setPersonality(selectedAccount.aiPersonality);
-      setHasChanges(false);
-    }
-  }, [selectedAccount]);
-
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedAccount) throw new Error('No account selected');
-      return cloudFunctions.updateAccountSettings({
-        accountId: selectedAccount.id,
-        aiPersonality: personality,
-      });
-    },
-    onSuccess: () => {
-      refetchAccounts();
-      setHasChanges(false);
-    },
-  });
-
-  const updatePersonality = (updates: Partial<AIPersonality>) => {
-    setPersonality((prev) => ({ ...prev, ...updates }));
-    setHasChanges(true);
-  };
-
-  const handleGeneratedPersonality = (generated: {
-    name: string;
-    description: string;
-    systemPrompt: string;
-    goals: string[];
-    customInstructions: string;
-    tone: 'friendly' | 'professional' | 'casual' | 'enthusiastic';
-  }) => {
-    setPersonality((prev) => ({
-      ...prev,
-      ...generated,
-    }));
-    setHasChanges(true);
-    setShowGenerateModal(false);
-  };
-
-  if (!selectedAccount) {
-    return (
-      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
-        <NoAccountPrompt />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-5">
-      {/* Generate from Website Banner */}
-      <div className={styles.banner.accent}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-start gap-3">
-            <div className="rounded-lg bg-gradient-to-br from-accent to-accent-secondary p-2">
-              <Sparkles className="h-5 w-5 text-white" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-gray-900">Auto-Generate Personality</h3>
-              <p className="text-sm text-gray-600">
-                Let AI analyze your website and auto-fill all personality settings
-              </p>
-            </div>
-          </div>
-          <Button
-            variant="secondary"
-            onClick={() => setShowGenerateModal(true)}
-          >
-            <Sparkles className="h-4 w-4 mr-1.5" />
-            Generate from Website
-          </Button>
-        </div>
-      </div>
-
-      {/* Generate Modal */}
-      {showGenerateModal && (
-        <GenerateFromWebsiteModal
-          onClose={() => setShowGenerateModal(false)}
-          onGenerate={handleGeneratedPersonality}
-          defaultUrl={knowledgeBase?.websites?.[0]?.url}
-        />
       )}
 
-      {/* AI Name & Description */}
-      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
-        <div className="flex items-center gap-3 mb-5">
-          <Bot className="h-5 w-5 text-gray-500" />
-          <div>
-            <h2 className="font-semibold text-gray-900">AI Assistant Identity</h2>
-            <p className="text-sm text-gray-500">Configure how your AI assistant presents itself</p>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <Input
-            label="Assistant Name"
-            value={personality.name || ''}
-            onChange={(e) => updatePersonality({ name: e.target.value })}
-            placeholder="e.g., Alex, Support Bot, Your Name's Assistant"
-          />
-
-          <Textarea
-            label="Description"
-            value={personality.description || ''}
-            onChange={(e) => updatePersonality({ description: e.target.value })}
-            placeholder="Brief description of who the assistant represents"
-            rows={2}
-          />
-
-          <Select
-            label="Tone"
-            value={personality.tone || 'friendly'}
-            onChange={(e) => updatePersonality({ tone: e.target.value as AIPersonality['tone'] })}
-            options={[
-              { value: 'friendly', label: 'Friendly' },
-              { value: 'professional', label: 'Professional' },
-              { value: 'casual', label: 'Casual' },
-              { value: 'enthusiastic', label: 'Enthusiastic' },
-            ]}
-          />
-        </div>
-      </div>
-
-      {/* System Prompt */}
-      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
-        <div className="flex items-center gap-3 mb-5">
-          <MessageSquare className="h-5 w-5 text-gray-500" />
-          <div>
-            <h2 className="font-semibold text-gray-900">System Instructions</h2>
-            <p className="text-sm text-gray-500">Detailed instructions for how the AI should behave</p>
-          </div>
-        </div>
-
-        <Textarea
-          label="System Prompt"
-          value={personality.systemPrompt || ''}
-          onChange={(e) => updatePersonality({ systemPrompt: e.target.value })}
-          placeholder="You are a helpful assistant for [brand name]. Your role is to..."
-          rows={6}
-        />
-
-        <div className="mt-4">
-          <label className="block text-sm font-medium text-gray-500 mb-2">Goals</label>
-          <GoalsList
-            goals={personality.goals || []}
-            onChange={(goals) => updatePersonality({ goals })}
-          />
-        </div>
-      </div>
-
-      {/* Custom Instructions */}
-      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
-        <h3 className="font-semibold text-gray-900 mb-4">Additional Settings</h3>
-
-        <div className="space-y-4">
-          <Textarea
-            label="Custom Instructions"
-            value={personality.customInstructions || ''}
-            onChange={(e) => updatePersonality({ customInstructions: e.target.value })}
-            placeholder="Any additional instructions or context for the AI..."
-            rows={4}
-          />
-
-          <div>
-            <label className="block text-sm font-medium text-gray-500 mb-2">Forbidden Topics (AI will avoid these)</label>
-            <TagInput
-              tags={personality.forbiddenTopics || []}
-              onChange={(forbiddenTopics) => updatePersonality({ forbiddenTopics })}
-              placeholder="Add topic and press Enter"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-500 mb-2">Handoff Keywords (triggers human notification)</label>
-            <TagInput
-              tags={personality.handoffKeywords || []}
-              onChange={(handoffKeywords) => updatePersonality({ handoffKeywords })}
-              placeholder="e.g., speak to human, urgent, complaint"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Save Button */}
-      <div className="flex justify-end">
-        <Button
-          onClick={() => saveMutation.mutate()}
-          loading={saveMutation.isPending}
-          disabled={!hasChanges}
-        >
-          {saveMutation.isSuccess ? (
-            <>
-              <CheckCircle className="h-4 w-4 mr-1.5" />
-              Saved
-            </>
-          ) : (
-            'Save Changes'
-          )}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-// ============================================
-// KNOWLEDGE BASE TAB
-// ============================================
-
-function KnowledgeBaseTab() {
-  const { selectedAccount } = useAccount();
-  const [newFaq, setNewFaq] = useState({ question: '', answer: '' });
-
-  const { data: knowledgeBase, isLoading, refetch } = useQuery({
-    queryKey: ['knowledgeBase', selectedAccount?.id],
-    queryFn: async () => {
-      if (!selectedAccount) return null;
-      const result = await cloudFunctions.getKnowledgeBase({ accountId: selectedAccount.id });
-      return result.data;
-    },
-    enabled: !!selectedAccount,
-  });
-
-  const addFaqMutation = useMutation({
-    mutationFn: async () => {
-      if (!knowledgeBase) throw new Error('No knowledge base');
-      return cloudFunctions.addFAQ({
-        knowledgeBaseId: knowledgeBase.id,
-        question: newFaq.question,
-        answer: newFaq.answer,
-      });
-    },
-    onSuccess: () => {
-      setNewFaq({ question: '', answer: '' });
-      refetch();
-    },
-  });
-
-  const removeFaqMutation = useMutation({
-    mutationFn: async (faqId: string) => {
-      if (!knowledgeBase) throw new Error('No knowledge base');
-      return cloudFunctions.removeFAQ({
-        knowledgeBaseId: knowledgeBase.id,
-        faqId,
-      });
-    },
-    onSuccess: () => refetch(),
-  });
-
-  const addWebsiteMutation = useMutation({
-    mutationFn: async (url: string) => {
-      if (!knowledgeBase) throw new Error('No knowledge base');
-      return cloudFunctions.addWebsite({
-        knowledgeBaseId: knowledgeBase.id,
-        url,
-      });
-    },
-    onSuccess: () => refetch(),
-  });
-
-  const removeWebsiteMutation = useMutation({
-    mutationFn: async (websiteId: string) => {
-      if (!knowledgeBase) throw new Error('No knowledge base');
-      return cloudFunctions.removeWebsite({
-        knowledgeBaseId: knowledgeBase.id,
-        websiteId,
-      });
-    },
-    onSuccess: () => refetch(),
-  });
-
-  if (!selectedAccount) {
-    return (
-      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
-        <NoAccountPrompt />
-      </div>
-    );
-  }
-
-  if (isLoading) {
-    return <LoadingState />;
-  }
-
-  return (
-    <div className="space-y-5">
-      {/* Info Banner */}
-      <div className={styles.banner.accent}>
-        <div className="flex items-start gap-3">
-          <div className="rounded-lg bg-gradient-to-br from-accent to-accent-secondary p-2">
-            <Brain className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-gray-900">Knowledge Base</h3>
-            <p className="text-sm text-gray-600">
-              Add FAQs and website content to help your AI provide accurate, contextual responses.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* FAQs Section */}
-      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
-        <h3 className="font-semibold text-gray-900 mb-4">Frequently Asked Questions</h3>
-
-        {/* Existing FAQs */}
-        <div className="space-y-2 mb-5">
-          {knowledgeBase?.faqs?.map((faq) => (
-            <div key={faq.id} className="p-3 rounded-xl bg-gray-50 border border-gray-200">
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <p className="font-semibold text-gray-900 text-sm">{faq.question}</p>
-                  <p className="text-sm text-gray-500 mt-1">{faq.answer}</p>
-                </div>
-                <button
-                  onClick={() => removeFaqMutation.mutate(faq.id)}
-                  className="text-gray-400 hover:text-status-error ml-2"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+      <section className="grid gap-5 xl:grid-cols-2">
+        <SettingsCard icon={InstagramLogo} title="Instagram connection" description="The only Instagram account this workspace is allowed to automate.">
+          {accounts.length && selectedAccount ? (
+            <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <span className="grid h-11 w-11 place-items-center rounded-full bg-slate-950 text-white"><InstagramLogo size={22} weight="bold" /></span>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-slate-950">@{selectedAccount.username}</p>
+                <p className="mt-0.5 text-xs text-slate-500">Instagram professional account</p>
               </div>
+              <StatusPill good={selectedAccount.connectionStatus === 'connected'} label={selectedAccount.connectionStatus} />
             </div>
-          ))}
-          {(!knowledgeBase?.faqs || knowledgeBase.faqs.length === 0) && (
-            <p className="text-sm text-gray-400 text-center py-4">No FAQs added yet</p>
+          ) : (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">No Instagram account is connected.</div>
           )}
-        </div>
+          <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-slate-500"><LockKey size={15} className="mt-0.5 flex-shrink-0" />The backend rejects every account except the configured @sondre_pv account.</p>
+        </SettingsCard>
 
-        {/* Add New FAQ */}
-        <div className="border-t border-gray-200 pt-4">
-          <h4 className="text-sm font-medium text-gray-500 mb-3">Add New FAQ</h4>
+        <SettingsCard icon={ShieldCheck} title="Automation safety" description="The boundary that prevents overlap with the live ManyChat flow.">
+          <dl className="space-y-3 text-sm">
+            <SettingsRow label="Bot mode" value={isLoading ? 'Loading' : data?.runtime.mode || 'Off'} mono />
+            <SettingsRow label="Custom-bot keyword" value={data?.runtime.systemKeyword || 'None'} mono />
+            <SettingsRow label="MINDSET keyword" value={data?.runtime.manychatKeywordProtected ? 'Protected for ManyChat' : 'Available'} />
+            <SettingsRow label="Legacy generic flows" value="Not used by this funnel" />
+          </dl>
+          <Link href="/campaigns" className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-800 transition hover:border-slate-400">Manage campaign triggers <ArrowRight size={16} weight="bold" /></Link>
+        </SettingsCard>
+
+        <SettingsCard icon={Brain} title="AI conversation behavior" description="What happens when an athlete writes a free-text reply.">
           <div className="space-y-3">
-            <Input
-              placeholder="Question"
-              value={newFaq.question}
-              onChange={(e) => setNewFaq((prev) => ({ ...prev, question: e.target.value }))}
-            />
-            <Textarea
-              placeholder="Answer"
-              value={newFaq.answer}
-              onChange={(e) => setNewFaq((prev) => ({ ...prev, answer: e.target.value }))}
-              rows={3}
-            />
-            <Button
-              size="sm"
-              onClick={() => addFaqMutation.mutate()}
-              loading={addFaqMutation.isPending}
-              disabled={!newFaq.question || !newFaq.answer}
-            >
-              <Plus className="h-3.5 w-3.5 mr-1" />
-              Add FAQ
-            </Button>
+            <BehaviorRow icon={Robot} title="Open replies stay on topic" detail="Unusual messages use the current funnel stage and recent conversation context." />
+            <BehaviorRow icon={ShieldCheck} title="Rules handle critical stages first" detail="Downloads, first reps, pricing, trials, and paid confirmations stay deterministic." />
+            <BehaviorRow icon={ShieldCheck} title="Two-message silence limit" detail="After two unanswered follow-ups, the bot waits until the athlete replies." />
+            <BehaviorRow icon={UserCircle} title="Sensitive messages stop silently" detail="Billing, refunds, safety, and requests for a person create a handoff without an automated reply." />
           </div>
-        </div>
-      </div>
+          <p className="mt-4 rounded-xl bg-slate-50 px-3.5 py-3 text-xs leading-5 text-slate-600">The AI cannot quote a price from memory, ask whether someone subscribed, use em dashes, request payment details, invent features, or continue selling after a verified conversion.</p>
+        </SettingsCard>
 
-      {/* Websites Section */}
-      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
-        <h3 className="font-semibold text-gray-900 mb-3">Website Content</h3>
-        <p className="text-sm text-gray-500 mb-4">
-          Add your website URLs. Content will be scraped to help the AI answer questions.
-        </p>
+        <SettingsCard icon={LinkSimple} title="Conversion tracking" description="How the dashboard knows whether a conversation led to app use and payment.">
+          <div className="space-y-3">
+            <ChecklistRow label="Tracked Instagram download redirect" complete />
+            <ChecklistRow label="App-open and first-rep milestones" complete />
+            <ChecklistRow label="Paywall-view milestone" complete />
+            <ChecklistRow label="RevenueCat trial and subscription verification endpoint" complete />
+          </div>
+          <p className="mt-4 text-xs leading-5 text-slate-500">A link click is not treated as a download, and a user&apos;s DM claim is not treated as a verified payment. In this local review, the updated app and RevenueCat bridge are implementation-ready but not newly deployed.</p>
+        </SettingsCard>
 
-        {/* Existing Websites */}
-        <div className="space-y-2 mb-4">
-          {knowledgeBase?.websites?.map((website) => (
-            <div
-              key={website.id}
-              className="flex items-center justify-between p-2.5 rounded-xl bg-gray-50 border border-gray-200"
-            >
-              <div className="flex items-center gap-2">
-                <Globe className="h-4 w-4 text-gray-400" />
-                <a
-                  href={website.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-accent hover:underline"
-                >
-                  {website.title || website.url}
-                </a>
-              </div>
-              <button
-                onClick={() => removeWebsiteMutation.mutate(website.id)}
-                className="text-gray-400 hover:text-status-error"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
-          ))}
-          {(!knowledgeBase?.websites || knowledgeBase.websites.length === 0) && (
-            <p className="text-sm text-gray-400 text-center py-4">No websites added yet</p>
-          )}
-        </div>
+        <SettingsCard icon={Fingerprint} title="Dashboard access" description="This is separate from your Instagram login.">
+          <dl className="space-y-3 text-sm">
+            <SettingsRow label="Authentication" value="Firebase email and password" />
+            <SettingsRow label="Signed-in email" value={reviewMode ? 'Hidden in local preview' : user?.email || 'Not available'} />
+            <SettingsRow label="Workspace role" value="Owner" />
+          </dl>
+          <p className="mt-4 text-xs leading-5 text-slate-500">Use “Forgot your password?” on the login screen if you do not remember the private dashboard password. Never enter your Instagram password here.</p>
+        </SettingsCard>
 
-        {/* Add Website */}
-        <WebsiteInput onAdd={(url) => addWebsiteMutation.mutate(url)} loading={addWebsiteMutation.isPending} />
-      </div>
-    </div>
-  );
-}
-
-// ============================================
-// NOTIFICATION SETTINGS TAB
-// ============================================
-
-function NotificationSettingsTab() {
-  const { selectedAccount, refetchAccounts } = useAccount();
-  const [settings, setSettings] = useState<Partial<AccountSettings>>({});
-  const [hasChanges, setHasChanges] = useState(false);
-
-  useEffect(() => {
-    if (selectedAccount?.settings) {
-      setSettings(selectedAccount.settings);
-      setHasChanges(false);
-    }
-  }, [selectedAccount]);
-
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedAccount) throw new Error('No account selected');
-      return cloudFunctions.updateAccountSettings({
-        accountId: selectedAccount.id,
-        settings,
-      });
-    },
-    onSuccess: () => {
-      refetchAccounts();
-      setHasChanges(false);
-    },
-  });
-
-  const updateSettings = (updates: Partial<AccountSettings>) => {
-    setSettings((prev) => ({ ...prev, ...updates }));
-    setHasChanges(true);
-  };
-
-  if (!selectedAccount) {
-    return (
-      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
-        <NoAccountPrompt />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-5">
-      {/* Collection Settings */}
-      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
-        <h3 className="font-semibold text-gray-900 mb-4">Data Collection</h3>
-        <div className="space-y-4">
-          <Toggle
-            label="Collect Email Addresses"
-            enabled={settings.collectEmail ?? true}
-            onChange={(enabled) => updateSettings({ collectEmail: enabled })}
-          />
-          <Toggle
-            label="Collect Phone Numbers"
-            enabled={settings.collectPhone ?? false}
-            onChange={(enabled) => updateSettings({ collectPhone: enabled })}
-          />
-          <Toggle
-            label="Auto-Welcome New Followers"
-            enabled={settings.autoWelcomeNewFollowers ?? true}
-            onChange={(enabled) => updateSettings({ autoWelcomeNewFollowers: enabled })}
-          />
-
-          {settings.autoWelcomeNewFollowers && (
-            <Textarea
-              label="Welcome Message"
-              value={settings.welcomeMessage || ''}
-              onChange={(e) => updateSettings({ welcomeMessage: e.target.value })}
-              placeholder="Hey! Thanks for following..."
-              rows={3}
-            />
-          )}
-        </div>
-      </div>
-
-      {/* Message Prompts */}
-      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
-        <h3 className="font-semibold text-gray-900 mb-4">Message Templates</h3>
-        <div className="space-y-4">
-          <Textarea
-            label="Email Collection Prompt"
-            value={settings.emailPrompt || ''}
-            onChange={(e) => updateSettings({ emailPrompt: e.target.value })}
-            placeholder="I'd love to send you exclusive content! What's your email?"
-            rows={2}
-          />
-          <Textarea
-            label="Phone Collection Prompt"
-            value={settings.phonePrompt || ''}
-            onChange={(e) => updateSettings({ phonePrompt: e.target.value })}
-            placeholder="For fastest updates, can I get your phone number?"
-            rows={2}
-          />
-          <Textarea
-            label="Thank You Message"
-            value={settings.thankYouMessage || ''}
-            onChange={(e) => updateSettings({ thankYouMessage: e.target.value })}
-            placeholder="Thanks! You'll hear from us soon!"
-            rows={2}
-          />
-        </div>
-      </div>
-
-      {/* Business Hours */}
-      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
-        <h3 className="font-semibold text-gray-900 mb-4">Business Hours</h3>
-        <div className="space-y-4">
-          <Toggle
-            label="Only respond during business hours"
-            enabled={settings.businessHoursOnly ?? false}
-            onChange={(enabled) => updateSettings({ businessHoursOnly: enabled })}
-          />
-
-          {settings.businessHoursOnly && (
-            <>
-              <div className="grid grid-cols-2 gap-4">
-                <Input
-                  label="Start Time"
-                  type="time"
-                  value={settings.businessHours?.start || '09:00'}
-                  onChange={(e) =>
-                    updateSettings({
-                      businessHours: { ...settings.businessHours!, start: e.target.value },
-                    })
-                  }
-                />
-                <Input
-                  label="End Time"
-                  type="time"
-                  value={settings.businessHours?.end || '17:00'}
-                  onChange={(e) =>
-                    updateSettings({
-                      businessHours: { ...settings.businessHours!, end: e.target.value },
-                    })
-                  }
-                />
-              </div>
-              <Textarea
-                label="Out of Hours Message"
-                value={settings.outOfHoursMessage || ''}
-                onChange={(e) => updateSettings({ outOfHoursMessage: e.target.value })}
-                placeholder="Thanks for reaching out! We'll get back to you during business hours."
-                rows={2}
-              />
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Notifications */}
-      <div className="rounded-xl bg-white shadow-sm border border-gray-100 p-6">
-        <h3 className="font-semibold text-gray-900 mb-4">Email Notifications</h3>
-        <div className="space-y-4">
-          <Toggle
-            label="Notify on new lead"
-            enabled={settings.notifyOnNewLead ?? false}
-            onChange={(enabled) => updateSettings({ notifyOnNewLead: enabled })}
-          />
-          <Toggle
-            label="Notify on handoff request"
-            enabled={settings.notifyOnHandoff ?? true}
-            onChange={(enabled) => updateSettings({ notifyOnHandoff: enabled })}
-          />
-
-          {(settings.notifyOnNewLead || settings.notifyOnHandoff) && (
-            <Input
-              label="Notification Email"
-              type="email"
-              value={settings.notificationEmail || ''}
-              onChange={(e) => updateSettings({ notificationEmail: e.target.value })}
-              placeholder="your@email.com"
-            />
-          )}
-        </div>
-      </div>
-
-      {/* Save Button */}
-      <div className="flex justify-end">
-        <Button
-          onClick={() => saveMutation.mutate()}
-          loading={saveMutation.isPending}
-          disabled={!hasChanges}
-        >
-          {saveMutation.isSuccess ? (
-            <>
-              <CheckCircle className="h-4 w-4 mr-1.5" />
-              Saved
-            </>
-          ) : (
-            'Save Changes'
-          )}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-// ============================================
-// GENERATE FROM WEBSITE MODAL
-// ============================================
-
-function GenerateFromWebsiteModal({
-  onClose,
-  onGenerate,
-  defaultUrl,
-}: {
-  onClose: () => void;
-  onGenerate: (personality: {
-    name: string;
-    description: string;
-    systemPrompt: string;
-    goals: string[];
-    customInstructions: string;
-    tone: 'friendly' | 'professional' | 'casual' | 'enthusiastic';
-  }) => void;
-  defaultUrl?: string;
-}) {
-  const [url, setUrl] = useState(defaultUrl || '');
-  const [error, setError] = useState<string | null>(null);
-
-  const generateMutation = useMutation({
-    mutationFn: async () => {
-      setError(null);
-      const result = await cloudFunctions.generateAIPersonalityFromWebsite({ url });
-      return result.data;
-    },
-    onSuccess: (data) => {
-      onGenerate(data);
-    },
-    onError: (error: any) => {
-      const message = error?.message || 'Failed to generate personality';
-      setError(message);
-    },
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!url.trim()) {
-      setError('Please enter a URL');
-      return;
-    }
-    generateMutation.mutate();
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-
-      {/* Modal */}
-      <div className="relative bg-white rounded-lg border border-gray-200 max-w-lg w-full mx-4 overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-gray-200">
-          <div className="flex items-center gap-3">
-            <Sparkles className="h-5 w-5 text-accent" />
+        <SettingsCard icon={CloudArrowUp} title="Deployment boundary" description="What is local versus available on the hosted dashboard.">
+          <div className={cn('flex items-start gap-3 rounded-xl border p-4', reviewMode ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50')}>
+            {reviewMode ? <Warning size={20} weight="fill" className="mt-0.5 text-amber-700" /> : <CheckCircle size={20} weight="fill" className="mt-0.5 text-emerald-700" />}
             <div>
-              <h2 className="font-semibold text-gray-900">Generate from Website</h2>
-              <p className="text-sm text-gray-500">AI will analyze your website content</p>
+              <p className={cn('text-sm font-semibold', reviewMode ? 'text-amber-900' : 'text-emerald-900')}>{reviewMode ? 'New dashboard is local only' : 'Hosted dashboard is active'}</p>
+              <p className={cn('mt-1 text-xs leading-5', reviewMode ? 'text-amber-800' : 'text-emerald-800')}>{reviewMode ? 'Review and approve it before any Vercel or Firebase deployment.' : 'Changes on this version are connected to the bot backend.'}</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-ink transition-colors"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+        </SettingsCard>
+      </section>
+    </div>
+  );
+}
 
-        {/* Content */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-500 mb-2">
-              Website URL
-            </label>
-            <Input
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://your-website.com"
-              disabled={generateMutation.isPending}
-            />
-            <p className="mt-2 text-xs text-gray-400">
-              Enter the URL of your website, landing page, or about page
-            </p>
-          </div>
-
-          {error && (
-            <div className="flex items-start gap-2 p-3 rounded-xl bg-status-error/5 border border-status-error/20">
-              <AlertCircle className="h-4 w-4 text-status-error mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-status-error">{error}</p>
-            </div>
-          )}
-
-          {generateMutation.isPending && (
-            <div className="flex items-center gap-3 p-4 rounded-xl bg-accent/5 border border-accent/20">
-              <span className={cn(styles.spinner, 'text-accent')} />
-              <div>
-                <p className="text-sm font-semibold text-gray-900">Analyzing website...</p>
-                <p className="text-xs text-gray-500">This may take a few seconds</p>
-              </div>
-            </div>
-          )}
-
-          <div className="flex justify-end gap-3 pt-4">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={onClose}
-              disabled={generateMutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              loading={generateMutation.isPending}
-              disabled={!url.trim()}
-            >
-              <Sparkles className="h-4 w-4 mr-1.5" />
-              Generate
-            </Button>
-          </div>
-        </form>
+function SettingsCard({ icon: Icon, title, description, children }: { icon: typeof InstagramLogo; title: string; description: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+      <div className="flex items-start gap-3">
+        <span className="grid h-10 w-10 flex-shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-700"><Icon size={19} weight="bold" /></span>
+        <div><h2 className="font-semibold text-slate-950">{title}</h2><p className="mt-1 text-xs leading-5 text-slate-500">{description}</p></div>
       </div>
-    </div>
+      <div className="mt-5">{children}</div>
+    </section>
   );
 }
 
-// ============================================
-// HELPER COMPONENTS
-// ============================================
-
-function StatusBadge({ status }: { status: string }) {
-  const colors = {
-    connected: styles.badge.success,
-    expired: styles.badge.warning,
-    error: styles.badge.error,
-  };
-
-  return (
-    <span className={cn(styles.badge.base, colors[status as keyof typeof colors] || colors.error)}>
-      {status}
-    </span>
-  );
+function SettingsRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-3 last:border-0 last:pb-0"><dt className="text-slate-500">{label}</dt><dd className={cn('max-w-[60%] text-right font-semibold text-slate-900', mono && 'font-mono text-xs')}>{value}</dd></div>;
 }
 
-function LoadingState() {
-  return (
-    <div className="flex items-center justify-center py-12">
-      <span className={styles.spinner} />
-    </div>
-  );
+function BehaviorRow({ icon: Icon, title, detail }: { icon: typeof Robot; title: string; detail: string }) {
+  return <div className="flex gap-3"><span className="mt-0.5 grid h-7 w-7 flex-shrink-0 place-items-center rounded-lg bg-emerald-50 text-emerald-700"><Icon size={15} weight="bold" /></span><div><p className="text-sm font-semibold text-slate-900">{title}</p><p className="mt-0.5 text-xs leading-5 text-slate-500">{detail}</p></div></div>;
 }
 
-function GoalsList({ goals, onChange }: { goals: string[]; onChange: (goals: string[]) => void }) {
-  const [newGoal, setNewGoal] = useState('');
-
-  const addGoal = () => {
-    if (newGoal.trim()) {
-      onChange([...goals, newGoal.trim()]);
-      setNewGoal('');
-    }
-  };
-
-  const removeGoal = (index: number) => {
-    onChange(goals.filter((_, i) => i !== index));
-  };
-
-  return (
-    <div className="space-y-2">
-      {goals.map((goal, index) => (
-        <div key={index} className="flex items-center gap-2 p-2 rounded-xl bg-gray-50">
-          <span className="flex-1 text-sm text-ink">{goal}</span>
-          <button onClick={() => removeGoal(index)} className="text-gray-400 hover:text-status-error">
-            <Trash2 className="h-4 w-4" />
-          </button>
-        </div>
-      ))}
-      <div className="flex gap-2">
-        <Input
-          placeholder="Add a goal..."
-          value={newGoal}
-          onChange={(e) => setNewGoal(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addGoal())}
-        />
-        <Button variant="secondary" size="sm" onClick={addGoal}>
-          <Plus className="h-4 w-4" />
-        </Button>
-      </div>
-    </div>
-  );
+function ChecklistRow({ label, complete }: { label: string; complete: boolean }) {
+  return <div className="flex items-center gap-2.5 text-sm text-slate-700">{complete ? <CheckCircle size={18} weight="fill" className="text-emerald-600" /> : <Warning size={18} className="text-amber-600" />}<span>{label}</span></div>;
 }
 
-function TagInput({
-  tags,
-  onChange,
-  placeholder,
-}: {
-  tags: string[];
-  onChange: (tags: string[]) => void;
-  placeholder: string;
-}) {
-  const [input, setInput] = useState('');
-
-  const addTag = () => {
-    if (input.trim() && !tags.includes(input.trim())) {
-      onChange([...tags, input.trim()]);
-      setInput('');
-    }
-  };
-
-  const removeTag = (tag: string) => {
-    onChange(tags.filter((t) => t !== tag));
-  };
-
-  return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap gap-2">
-        {tags.map((tag) => (
-          <span
-            key={tag}
-            className={cn(styles.badge.base, styles.badge.neutral, 'inline-flex items-center gap-1')}
-          >
-            {tag}
-            <button onClick={() => removeTag(tag)} className="text-gray-400 hover:text-status-error">
-              &times;
-            </button>
-          </span>
-        ))}
-      </div>
-      <Input
-        placeholder={placeholder}
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
-      />
-    </div>
-  );
-}
-
-function WebsiteInput({ onAdd, loading }: { onAdd: (url: string) => void; loading: boolean }) {
-  const [url, setUrl] = useState('');
-
-  const handleAdd = () => {
-    if (url.trim()) {
-      onAdd(url.trim());
-      setUrl('');
-    }
-  };
-
-  return (
-    <div className="flex gap-2">
-      <Input
-        placeholder="https://your-website.com"
-        value={url}
-        onChange={(e) => setUrl(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAdd())}
-      />
-      <Button variant="secondary" onClick={handleAdd} loading={loading}>
-        <Plus className="h-4 w-4 mr-1" />
-        Add
-      </Button>
-    </div>
-  );
+function StatusPill({ good, label }: { good: boolean; label: string }) {
+  return <span className={cn('rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em]', good ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800')}>{label}</span>;
 }

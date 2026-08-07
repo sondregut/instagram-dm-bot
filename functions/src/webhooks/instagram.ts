@@ -11,6 +11,9 @@ import {
 } from '../handlers/storyHandler';
 import { getAccountByInstagramId, updateAccountWebhookTimestamp } from '../services/accounts';
 import { InstagramAccount } from '../firebase';
+import { handleMindsetComment, handleMindsetMessage } from '../handlers/mindsetHandler';
+import { BotMode, getBotMode } from '../utils/runtimeMode';
+import { verifyMetaWebhookSignature } from '../utils/webhookSignature';
 
 /**
  * Instagram Webhook Handler
@@ -39,29 +42,32 @@ export const instagramWebhook = functions.https.onRequest(async (req, res) => {
 
   // Handle webhook events (POST request)
   if (req.method === 'POST') {
-    const { object, entry } = req.body;
+    const mode = getBotMode();
+    if (mode === 'disabled') {
+      console.log('[Webhook] Bot is disabled - ignoring all events');
+      res.sendStatus(200);
+      return;
+    }
 
-    // Validate it's an Instagram webhook
-    if (object !== 'instagram') {
-      console.log(`Received webhook for unsupported object: ${object}`);
+    const signature = req.get('x-hub-signature-256') || undefined;
+    if (!verifyMetaWebhookSignature(req.rawBody, signature, process.env.INSTAGRAM_APP_SECRET)) {
+      console.warn('[Webhook] Rejected request with invalid signature');
+      res.sendStatus(401);
+      return;
+    }
+
+    const { object, entry } = req.body || {};
+    if (object !== 'instagram' || !Array.isArray(entry)) {
       res.sendStatus(404);
       return;
     }
 
-    // Process events BEFORE responding (Meta allows 20 seconds)
-    // This ensures the function doesn't terminate before processing completes
     try {
-      console.log('[Webhook] Processing events...');
-      await processWebhookEvents(entry);
-      console.log('[Webhook] Events processed successfully');
+      await processWebhookEvents(entry, mode);
     } catch (error) {
-      console.error('[Webhook] Error processing webhook events:', error);
-      if (error instanceof Error) {
-        console.error('[Webhook] Error stack:', error.stack);
-      }
+      console.error('[Webhook] Event processing failed:', error instanceof Error ? error.message : 'unknown');
     }
 
-    // Send response after processing
     res.sendStatus(200);
     return;
   }
@@ -73,7 +79,7 @@ export const instagramWebhook = functions.https.onRequest(async (req, res) => {
  * Process webhook events from Meta
  * Routes events to the correct account based on recipient ID
  */
-async function processWebhookEvents(entry: any[]): Promise<void> {
+async function processWebhookEvents(entry: any[], mode: BotMode): Promise<void> {
   for (const event of entry) {
     // The event.id is the Instagram Account ID that received the event
     const instagramAccountId = event.id;
@@ -98,6 +104,7 @@ async function processWebhookEvents(entry: any[]): Promise<void> {
         try {
           // Check for story mention events
           if (isStoryMentionEvent(messagingEvent)) {
+            if (mode !== 'full') continue;
             console.log('[Webhook] Processing story mention event');
             await handleStoryMention(messagingEvent as InstagramStoryMentionEvent, account);
             continue;
@@ -105,12 +112,16 @@ async function processWebhookEvents(entry: any[]): Promise<void> {
 
           // Check for story reply events (message with story context)
           if (isStoryReplyEvent(messagingEvent)) {
+            if (mode !== 'full') continue;
             console.log('[Webhook] Processing story reply event');
             await handleStoryReply(messagingEvent as InstagramStoryReplyEvent, account);
             continue;
           }
 
-          // Regular message handling
+          const mindsetHandled = await handleMindsetMessage(messagingEvent as InstagramMessageEvent, account);
+          if (mindsetHandled || mode !== 'full') continue;
+
+          // Legacy regular message handling is available only in explicit full mode.
           await handleMessage(messagingEvent as InstagramMessageEvent, account);
         } catch (error) {
           console.error('Error handling message/story event:', error);
@@ -124,10 +135,13 @@ async function processWebhookEvents(entry: any[]): Promise<void> {
         try {
           switch (change.field) {
             case 'comments':
+              const mindsetHandled = await handleMindsetComment(change.value as InstagramCommentEvent, account);
+              if (mindsetHandled || mode !== 'full') break;
               await handleComment(change.value as InstagramCommentEvent, account);
               break;
 
             case 'mentions':
+              if (mode !== 'full') break;
               // Handle story mentions from changes field (alternative format)
               console.log('[Webhook] Story mention from changes:', change.value);
               if (change.value?.media_type === 'STORY' || change.value?.story_id) {

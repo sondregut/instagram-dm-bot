@@ -6,6 +6,7 @@ import { Sidebar } from '@/components/Sidebar';
 import { useAuth } from '@/hooks/useAuth';
 import { AccountProvider } from '@/components/AccountSelector';
 import { styles } from '@/lib/styles';
+import { isDashboardReviewMode } from '@/lib/mindsetReview';
 
 export default function DashboardLayout({
   children,
@@ -14,31 +15,32 @@ export default function DashboardLayout({
 }) {
   const { isAuthenticated, loading } = useAuth();
   const router = useRouter();
+  const reviewMode = isDashboardReviewMode();
 
   useEffect(() => {
-    if (!loading && !isAuthenticated) {
+    if (!reviewMode && !loading && !isAuthenticated) {
       router.push('/login');
     }
-  }, [isAuthenticated, loading, router]);
+  }, [isAuthenticated, loading, reviewMode, router]);
 
-  if (loading) {
+  if (!reviewMode && loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-surface">
+      <div className="flex min-h-[100dvh] items-center justify-center bg-surface-sunken">
         <span className={styles.spinner} />
       </div>
     );
   }
 
-  if (!isAuthenticated) {
+  if (!reviewMode && !isAuthenticated) {
     return null;
   }
 
   return (
     <AccountProvider>
-      <div className="flex h-screen bg-surface">
+      <div className="flex min-h-[100dvh] bg-surface-sunken">
         <Sidebar />
-        <main className="flex-1 overflow-auto">
-          <div className="p-6">{children}</div>
+        <main className="min-w-0 flex-1 pb-20 md:pb-0">
+          <div className="mx-auto w-full max-w-[1480px] px-4 py-5 sm:px-6 lg:px-10 lg:py-8">{children}</div>
         </main>
       </div>
     </AccountProvider>

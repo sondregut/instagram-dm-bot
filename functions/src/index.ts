@@ -41,6 +41,30 @@ import {
 // Import flow types and executor
 import { Flow, FlowInput, validateFlow } from './models/flow';
 import { processScheduledExecutions } from './services/flowExecutor';
+import {
+  processMindsetFollowUps,
+  recordMindsetActivationLinkClick,
+  recordMindsetActivationEvent,
+  recordMindsetConversionEvent,
+  recordMindsetDownloadClick,
+} from './handlers/mindsetHandler';
+import { getMindsetConversionSecret } from './services/mindsetConversionAuth';
+import {
+  hasValidBearerAuthorization,
+  MindsetActivationEvent,
+  MindsetConversionEvent,
+} from './services/mindsetTrackingLogic';
+import { isLegacyAutomationEnabled, isMindsetModeActive } from './utils/runtimeMode';
+import {
+  getMindsetCampaignsApi,
+  getMindsetInbox,
+  getMindsetOverview,
+  saveMindsetCampaignApi,
+  sendMindsetHumanReplyApi,
+  setMindsetAutomationApi,
+  simulateMindsetConversationApi,
+} from './services/mindsetOperations';
+import { refreshStaleMindsetLeadProfiles } from './services/mindsetProfiles';
 
 // ============================================
 // WEBHOOK ENDPOINT
@@ -87,6 +111,17 @@ export { updateAccountSettings };
 
 export { addFAQ, removeFAQ, updateFAQs, addWebsite, removeWebsite, getKnowledgeBaseApi, deleteKnowledgeBase, generateAIPersonalityFromWebsite };
 
+// Athlete Mindset operator dashboard
+export {
+  getMindsetCampaignsApi,
+  getMindsetInbox,
+  getMindsetOverview,
+  saveMindsetCampaignApi,
+  sendMindsetHumanReplyApi,
+  setMindsetAutomationApi,
+  simulateMindsetConversationApi,
+};
+
 // ============================================
 // SCHEDULED FUNCTIONS
 // ============================================
@@ -97,6 +132,10 @@ export { addFAQ, removeFAQ, updateFAQs, addWebsite, removeWebsite, getKnowledgeB
 export const scheduledFollowerCheck = functions.pubsub
   .schedule('every 15 minutes')
   .onRun(async () => {
+    if (!isLegacyAutomationEnabled()) {
+      console.log('[Scheduled] Legacy follower checks are disabled');
+      return null;
+    }
     console.log('Running scheduled follower check for all accounts...');
     const result = await checkNewFollowers();
     console.log(`Follower check complete: ${result.accountsProcessed} accounts, ${result.totalNewFollowers} new followers, ${result.totalDmsSent} DMs sent`);
@@ -109,6 +148,10 @@ export const scheduledFollowerCheck = functions.pubsub
 export const scheduledMessageQueueProcess = functions.pubsub
   .schedule('every 5 minutes')
   .onRun(async () => {
+    if (!isLegacyAutomationEnabled()) {
+      console.log('[Scheduled] Legacy message queue is disabled');
+      return null;
+    }
     console.log('Processing message queue...');
     const processed = await processMessageQueue();
     console.log(`Processed ${processed} queued messages`);
@@ -176,16 +219,18 @@ export const scheduledProfilePictureRefresh = functions.pubsub
 
     let totalRefreshed = 0;
     let totalFailed = 0;
+    let mindsetProfilesAttempted = 0;
+    let mindsetProfilesUpdated = 0;
 
     for (const account of accounts) {
       try {
-        // Get contacts with profile pictures that haven't been updated in 7 days
-        const sevenDaysAgo = admin.firestore.Timestamp.fromMillis(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        // Meta's CDN URLs expire after a few days, so refresh before that window.
+        const twoDaysAgo = admin.firestore.Timestamp.fromMillis(Date.now() - 2 * 24 * 60 * 60 * 1000);
 
         // Get contacts that have a profile picture URL but it's stale
         const staleContacts = await db.collection('conversations')
           .where('accountId', '==', account.id)
-          .where('profilePictureUpdatedAt', '<', sevenDaysAgo)
+          .where('profilePictureUpdatedAt', '<', twoDaysAgo)
           .limit(50) // Process up to 50 per account per run to avoid rate limits
           .get();
 
@@ -232,12 +277,20 @@ export const scheduledProfilePictureRefresh = functions.pubsub
             totalFailed++;
           }
         }
+
+        const mindsetRefresh = await refreshStaleMindsetLeadProfiles(account);
+        mindsetProfilesAttempted += mindsetRefresh.attempted;
+        mindsetProfilesUpdated += mindsetRefresh.updated;
       } catch (error) {
         console.error(`Error processing account ${account.id}:`, error);
       }
     }
 
-    console.log(`Profile picture refresh complete: ${totalRefreshed} refreshed, ${totalFailed} failed`);
+    console.log(
+      `Profile picture refresh complete: ${totalRefreshed} contacts refreshed, `
+      + `${totalFailed} contact failures, ${mindsetProfilesUpdated}/${mindsetProfilesAttempted} `
+      + 'Athlete Mindset profiles updated'
+    );
     return null;
   });
 
@@ -247,11 +300,176 @@ export const scheduledProfilePictureRefresh = functions.pubsub
 export const scheduledFlowExecutionProcess = functions.pubsub
   .schedule('every 1 minutes')
   .onRun(async () => {
+    if (!isLegacyAutomationEnabled()) {
+      console.log('[Scheduled] Legacy flow executions are disabled');
+      return null;
+    }
     console.log('Processing scheduled flow executions...');
     const processed = await processScheduledExecutions();
     console.log(`Processed ${processed} scheduled executions`);
     return null;
   });
+
+/**
+ * Process only Athlete Mindset follow-ups. Test mode remains account- and
+ * keyword-allowlisted inside the handler.
+ */
+export const scheduledMindsetFollowUps = functions.pubsub
+  .schedule('every 5 minutes')
+  .onRun(async () => {
+    if (!isMindsetModeActive()) {
+      console.log('[Scheduled] Athlete Mindset follow-ups are disabled');
+      return null;
+    }
+    const processed = await processMindsetFollowUps();
+    console.log(`[Scheduled] Processed ${processed} Athlete Mindset follow-ups`);
+    return null;
+  });
+
+/** Record the download-link click before redirecting to the public app route. */
+export const mindsetDownload = functions.https.onRequest(async (req, res) => {
+  if (req.method !== 'GET') {
+    res.sendStatus(405);
+    return;
+  }
+  const token = typeof req.query.token === 'string' ? req.query.token : '';
+  const destination = await recordMindsetDownloadClick(token);
+  if (!destination) {
+    res.status(404).send('This download link is invalid or expired.');
+    return;
+  }
+  res.redirect(302, destination);
+});
+
+function escapeMindsetHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function serializeMindsetScriptValue(value: string): string {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
+function mindsetOpenDocument(appUrl: string, fallbackUrl: string): string {
+  const safeAppUrl = escapeMindsetHtml(appUrl);
+  const safeFallbackUrl = escapeMindsetHtml(fallbackUrl);
+  const serializedAppUrl = serializeMindsetScriptValue(appUrl);
+  return `<!doctype html>
+<html lang="en" data-waiting="false">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Opening Athlete Mindset…</title>
+  <style>
+    :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #12243b; background: #f7f3eb; }
+    * { box-sizing: border-box; }
+    body { min-height: 100dvh; margin: 0; padding: 24px; display: grid; place-items: center; }
+    main { width: min(100%, 420px); padding: 34px 26px 28px; border: 1px solid rgba(18,36,59,.12); border-radius: 26px; background: #fffdf8; box-shadow: 0 24px 60px rgba(18,36,59,.12); text-align: center; }
+    h1 { margin: 0; font-size: clamp(1.8rem, 8vw, 2.45rem); letter-spacing: -.055em; line-height: 1; }
+    p { margin: 13px auto 0; max-width: 31ch; color: #647386; line-height: 1.45; }
+    .actions { margin-top: 26px; display: grid; gap: 10px; }
+    a { min-height: 50px; padding: 0 18px; display: grid; place-items: center; border-radius: 14px; font-weight: 750; text-decoration: none; }
+    .primary { background: #12243b; color: #fffdf8; }
+    .secondary { border: 1px solid rgba(18,36,59,.14); color: #12243b; }
+    .waiting { display: none; font-size: .84rem; }
+    html[data-waiting="true"] .waiting { display: block; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Open Athlete Mindset</h1>
+    <p>Continue straight to your first mental rep.</p>
+    <div class="actions">
+      <a class="primary" href="${safeAppUrl}">Open Athlete Mindset</a>
+      <a class="secondary" href="${safeFallbackUrl}">Get the app</a>
+      <p class="waiting">If Instagram keeps you here, tap <strong>Open Athlete Mindset</strong> above.</p>
+    </div>
+  </main>
+  <script>
+    (() => {
+      const appUrl = ${serializedAppUrl};
+      window.setTimeout(() => { window.location.href = appUrl; }, 100);
+      window.setTimeout(() => { document.documentElement.dataset.waiting = "true"; }, 1400);
+    })();
+  </script>
+</body>
+</html>`;
+}
+
+/** Instagram-safe handoff into the installed app, with App Store fallback. */
+export const mindsetOpen = functions.https.onRequest(async (req, res) => {
+  if (req.method !== 'GET') {
+    res.sendStatus(405);
+    return;
+  }
+  const token = typeof req.query.token === 'string' ? req.query.token : '';
+  const destination = await recordMindsetActivationLinkClick(token);
+  if (!destination) {
+    res.status(404).send('This app link is invalid or expired.');
+    return;
+  }
+  res.set({
+    'Cache-Control': 'private, no-store',
+    'Content-Type': 'text/html; charset=utf-8',
+    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
+    'X-Robots-Tag': 'noindex, nofollow',
+  });
+  res.status(200).send(mindsetOpenDocument(destination.appUrl, destination.fallbackUrl));
+});
+
+/** Accept monotonic in-app activation milestones for an opaque DM lead token. */
+export const mindsetActivationEvent = functions.https.onRequest(async (req, res) => {
+  if (req.method !== 'POST') {
+    res.sendStatus(405);
+    return;
+  }
+  const token = typeof req.body?.token === 'string' ? req.body.token : '';
+  const event = req.body?.event;
+  if (!['app_opened', 'first_rep_started', 'first_rep_completed', 'paywall_viewed'].includes(event)) {
+    res.status(400).json({ ok: false });
+    return;
+  }
+  const ok = await recordMindsetActivationEvent(token, event as MindsetActivationEvent);
+  res.status(ok ? 200 : 404).json({ ok });
+});
+
+/** Accept RevenueCat-verified trial and paid events from the Athlete Mindset backend. */
+export const mindsetConversionEvent = functions.https.onRequest(async (req, res) => {
+  if (req.method !== 'POST') {
+    res.sendStatus(405);
+    return;
+  }
+
+  const expectedSecret = await getMindsetConversionSecret();
+  if (!expectedSecret) {
+    res.status(503).json({ ok: false });
+    return;
+  }
+  if (!hasValidBearerAuthorization(req.headers.authorization, expectedSecret)) {
+    res.status(401).json({ ok: false });
+    return;
+  }
+
+  const token = typeof req.body?.token === 'string' ? req.body.token : '';
+  const event = req.body?.event;
+  const sourceEventId = typeof req.body?.sourceEventId === 'string' ? req.body.sourceEventId : undefined;
+  if (!['trial_started', 'subscribed'].includes(event)) {
+    res.status(400).json({ ok: false });
+    return;
+  }
+
+  const ok = await recordMindsetConversionEvent(
+    token,
+    event as MindsetConversionEvent,
+    sourceEventId
+  );
+  res.status(ok ? 200 : 404).json({ ok });
+});
 
 // ============================================
 // API ENDPOINTS (for dashboard)
@@ -716,7 +934,7 @@ export const bulkDMContacts = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('permission-denied', 'Not your account');
   }
 
-  const account = { id: accountDoc.id, ...accountDoc.data() } as Parameters<typeof import('./services/instagram').sendInstagramDM>[2];
+  const account = { ...accountDoc.data(), id: accountDoc.id } as Parameters<typeof import('./services/instagram').sendInstagramDM>[2];
 
   // Import sendInstagramDM
   const { sendInstagramDM } = await import('./services/instagram');
@@ -734,7 +952,7 @@ export const bulkDMContacts = functions.https.onCall(async (data, context) => {
     }
 
     const contactData = doc.data();
-    if (contactData?.userId !== userId) {
+    if (contactData?.userId !== userId || contactData?.accountId !== accountId) {
       failed++;
       continue;
     }

@@ -6,6 +6,10 @@ import { getKnowledgeBaseForAccount, buildKnowledgeContext } from './knowledge';
 let anthropic: Anthropic | null = null;
 let apiKey: string | null = null;
 
+function getAnthropicModel(): string {
+  return process.env.ANTHROPIC_MODEL?.trim() || 'claude-sonnet-5';
+}
+
 async function getApiKey(): Promise<string | null> {
   if (apiKey) return apiKey;
 
@@ -51,34 +55,46 @@ export interface ChatMessage {
  * Generate AI response for DM conversation using Claude Sonnet
  * Enhanced to support knowledge base context for RAG
  */
-export async function generateAIResponse(
+export interface AIResponseResult {
+  text: string;
+  usedAI: boolean;
+}
+
+export interface AIResponseOptions {
+  maxTokens?: number;
+  temperature?: number;
+  accountId?: string;
+  userMessage?: string;
+  fallbackResponse?: string;
+  includeAccountKnowledge?: boolean;
+}
+
+export async function generateAIResponseWithStatus(
   systemPrompt: string,
   conversationHistory: ChatMessage[],
-  options: {
-    maxTokens?: number;
-    temperature?: number;
-    accountId?: string;  // For knowledge base lookup
-    userMessage?: string; // For knowledge base query
-  } = {}
-): Promise<string> {
+  options: AIResponseOptions = {}
+): Promise<AIResponseResult> {
   const {
     maxTokens = 300,
     temperature = 0.7,
     accountId,
     userMessage,
+    fallbackResponse = "Thanks for reaching out. I'll ask Sondre to follow up personally.",
+    includeAccountKnowledge = true,
   } = options;
+  void temperature;
 
   // Get Anthropic client
   const client = await getAnthropic();
   if (!client) {
-    console.log('Anthropic client not available, using fallback response');
-    return "Hey! Thanks for reaching out. I'll get back to you soon!";
+    console.warn('[AI] Anthropic client unavailable; using explicit handoff fallback');
+    return { text: fallbackResponse, usedAI: false };
   }
 
   // Build enhanced system prompt with knowledge base context
   let enhancedPrompt = systemPrompt;
 
-  if (accountId && userMessage) {
+  if (includeAccountKnowledge && accountId && userMessage) {
     try {
       const kb = await getKnowledgeBaseForAccount(accountId);
       if (kb && kb.status === 'ready') {
@@ -94,7 +110,7 @@ export async function generateAIResponse(
 
   try {
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: getAnthropicModel(),
       max_tokens: maxTokens,
       system: enhancedPrompt,
       messages: conversationHistory.map(m => ({
@@ -108,15 +124,46 @@ export async function generateAIResponse(
       : null;
 
     if (!aiMessage) {
-      console.error('Empty AI response');
-      return "Thanks for your message! I'll get back to you soon.";
+      console.error('[AI] Claude returned an empty response');
+      return { text: fallbackResponse, usedAI: false };
     }
 
-    return aiMessage;
+    console.log('[AI] Claude response generated successfully');
+    return { text: aiMessage, usedAI: true };
   } catch (error) {
-    console.error('Claude API error:', error);
-    return "Thanks for reaching out! I'll respond shortly.";
+    console.error('[AI] Claude request failed:', error instanceof Error ? error.message : 'unknown error');
+    return { text: fallbackResponse, usedAI: false };
   }
+}
+
+export async function generateAIResponse(
+  systemPrompt: string,
+  conversationHistory: ChatMessage[],
+  options: AIResponseOptions = {}
+): Promise<string> {
+  return (await generateAIResponseWithStatus(systemPrompt, conversationHistory, options)).text;
+}
+
+export type IsolatedAIResponseOptions = Omit<
+  AIResponseOptions,
+  'accountId' | 'includeAccountKnowledge'
+>;
+
+/**
+ * Stateless conversation path for privacy-sensitive automations. It cannot
+ * append account-wide knowledge, so callers provide only the sealed history
+ * they intend Claude to see.
+ */
+export async function generateIsolatedAIResponseWithStatus(
+  systemPrompt: string,
+  conversationHistory: ChatMessage[],
+  options: IsolatedAIResponseOptions = {}
+): Promise<AIResponseResult> {
+  return generateAIResponseWithStatus(systemPrompt, conversationHistory, {
+    ...options,
+    accountId: undefined,
+    includeAccountKnowledge: false,
+  });
 }
 
 /**
@@ -148,7 +195,7 @@ Only output valid JSON, nothing else.`;
 
   try {
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: getAnthropicModel(),
       max_tokens: 150,
       system: systemPrompt,
       messages: [
@@ -188,7 +235,7 @@ Do not use excessive emojis.`;
 
   try {
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: getAnthropicModel(),
       max_tokens: 100,
       system: systemPrompt,
       messages: [

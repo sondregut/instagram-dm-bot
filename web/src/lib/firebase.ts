@@ -1,6 +1,14 @@
 import { initializeApp, getApps } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import {
+  createUserWithEmailAndPassword,
+  getAuth,
+  onAuthStateChanged,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signOut,
+  User,
+} from 'firebase/auth';
+import { connectFunctionsEmulator, getFunctions, httpsCallable } from 'firebase/functions';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -18,6 +26,24 @@ const auth = getAuth(app);
 const functions = getFunctions(app);
 const db = getFirestore(app);
 
+const firebaseRuntime = globalThis as typeof globalThis & {
+  __instagramDmFunctionsEmulatorConnected?: boolean;
+};
+
+if (
+  process.env.NODE_ENV === 'development'
+  && process.env.NEXT_PUBLIC_USE_FUNCTIONS_EMULATOR === 'true'
+  && !firebaseRuntime.__instagramDmFunctionsEmulatorConnected
+) {
+  const emulatorPort = Number(process.env.NEXT_PUBLIC_FUNCTIONS_EMULATOR_PORT || '5001');
+  connectFunctionsEmulator(
+    functions,
+    process.env.NEXT_PUBLIC_FUNCTIONS_EMULATOR_HOST || '127.0.0.1',
+    Number.isFinite(emulatorPort) ? emulatorPort : 5001
+  );
+  firebaseRuntime.__instagramDmFunctionsEmulatorConnected = true;
+}
+
 // Auth helpers
 export async function login(email: string, password: string) {
   return signInWithEmailAndPassword(auth, email, password);
@@ -25,6 +51,10 @@ export async function login(email: string, password: string) {
 
 export async function signup(email: string, password: string) {
   return createUserWithEmailAndPassword(auth, email, password);
+}
+
+export async function requestPasswordReset(email: string) {
+  return sendPasswordResetEmail(auth, email);
 }
 
 export async function logout() {
@@ -324,6 +354,177 @@ export interface InstagramPost {
 }
 
 // ============================================
+// ATHLETE MINDSET DM OPERATIONS TYPES
+// ============================================
+
+export type MindsetCampaignStatus = 'draft' | 'test' | 'live' | 'paused';
+
+export type MindsetConversationStage =
+  | 'awaiting_link_request'
+  | 'link_sent'
+  | 'link_clicked'
+  | 'awaiting_download_status'
+  | 'awaiting_activation'
+  | 'awaiting_use_status'
+  | 'awaiting_feedback'
+  | 'awaiting_offer_status'
+  | 'awaiting_subscription_status'
+  | 'trial_claimed'
+  | 'subscription_claimed'
+  | 'trial_started'
+  | 'subscribed'
+  | 'ai_follow_up'
+  | 'human_handoff'
+  | 'completed';
+
+export interface MindsetCampaign {
+  id: string;
+  name: string;
+  keyword: string;
+  postIds: string[];
+  status: MindsetCampaignStatus;
+  publicReplyEnabled: boolean;
+  publicReplyText: string;
+  template: 'athlete_mindset_download';
+  isSystem: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface MindsetCampaignInput {
+  id?: string;
+  accountId: string;
+  name: string;
+  keyword: string;
+  postIds: string[];
+  status: MindsetCampaignStatus;
+  publicReplyEnabled: boolean;
+  publicReplyText: string;
+}
+
+export interface MindsetConversation {
+  id: string;
+  instagramUserId: string;
+  username: string;
+  profilePictureUrl: string | null;
+  campaignId: string | null;
+  campaignName: string | null;
+  keyword: string;
+  stage: MindsetConversationStage;
+  feedbackReason: string | null;
+  history: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+    at: string | null;
+    source?: 'automation' | 'human' | null;
+  }>;
+  milestones: {
+    downloadClickedAt: string | null;
+    activationLinkClickedAt: string | null;
+    appOpenedAt: string | null;
+    firstRepStartedAt: string | null;
+    firstRepCompletedAt: string | null;
+    paywallViewedAt: string | null;
+    claimedTrialStartedAt: string | null;
+    claimedSubscribedAt: string | null;
+    trialStartedAt: string | null;
+    subscribedAt: string | null;
+  };
+  pendingFollowUps: Array<{
+    type: string;
+    status: string;
+    dueAt: string | null;
+  }>;
+  handoff: {
+    status: string;
+    reason: string | null;
+  } | null;
+  automation: {
+    paused: boolean;
+    pausedAt: string | null;
+    canReply: boolean;
+    messagingWindowEndsAt: string | null;
+    unansweredFollowUpCount?: number;
+    maxUnansweredFollowUps?: number;
+    lastAutomatedFollowUpAt?: string | null;
+  };
+  lastUserInteractionAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  recordSource?: 'mindset_funnel' | 'previous_bot';
+  previousBotState?: Conversation['conversationState'] | null;
+  includesEarlierHistory?: boolean;
+}
+
+export interface MindsetOverview {
+  account: {
+    id: string;
+    username: string;
+    connectionStatus: InstagramAccount['connectionStatus'];
+  };
+  runtime: {
+    mode: string;
+    manychatKeywordProtected: boolean;
+    systemKeyword: string | null;
+  };
+  metrics: {
+    total: number;
+    active: number;
+    handoffs: number;
+    linkClicks: number;
+    appOpens: number;
+    firstReps: number;
+    paywallViews: number;
+    claimedTrials: number;
+    claimedSubscribed: number;
+    trials: number;
+    subscribed: number;
+    last24Hours: number;
+  };
+  recentConversations: MindsetConversation[];
+  campaigns: MindsetCampaign[];
+}
+
+export interface MindsetInboxResult {
+  conversations: MindsetConversation[];
+  refreshedAt: string;
+  nextCursor?: string | null;
+  summary?: {
+    total: number;
+    mindset: number;
+    previousBotOnly: number;
+    mindsetDataComplete: boolean;
+    previousDataComplete: boolean;
+    mindsetDataAvailable: boolean;
+    previousBotDataAvailable: boolean;
+  };
+}
+
+export interface MindsetTestTurnInput {
+  accountId: string;
+  stage: MindsetConversationStage;
+  message: string;
+  quickReplyPayload?: string;
+  history: Array<{ role: 'user' | 'assistant'; content: string }>;
+}
+
+export interface MindsetTestTurnResult {
+  reply: string;
+  nextStage: MindsetConversationStage;
+  quickReplies: Array<{ title: string; payload: string }>;
+  buttons: Array<{ title: string; url: string }>;
+  createsHandoff: boolean;
+}
+
+export interface MindsetCampaignsResult {
+  campaigns: MindsetCampaign[];
+  runtime: {
+    mode: string;
+    manychatKeywordProtected: boolean;
+  };
+}
+
+// ============================================
 // USER TYPES
 // ============================================
 
@@ -339,6 +540,30 @@ export interface UserProfile {
 // ============================================
 
 export const cloudFunctions = {
+  // Athlete Mindset operator workspace
+  getMindsetOverview: httpsCallable<{ accountId: string }, MindsetOverview>(functions, 'getMindsetOverview'),
+  getMindsetInbox: httpsCallable<
+    { accountId: string; limit?: number; startAfter?: string },
+    MindsetInboxResult
+  >(functions, 'getMindsetInbox'),
+  getMindsetCampaigns: httpsCallable<{ accountId: string }, MindsetCampaignsResult>(functions, 'getMindsetCampaignsApi'),
+  saveMindsetCampaign: httpsCallable<
+    MindsetCampaignInput,
+    { success: boolean; campaign: MindsetCampaign }
+  >(functions, 'saveMindsetCampaignApi'),
+  sendMindsetHumanReply: httpsCallable<
+    { accountId: string; conversationId: string; message: string },
+    { success: boolean }
+  >(functions, 'sendMindsetHumanReplyApi'),
+  setMindsetAutomation: httpsCallable<
+    { accountId: string; conversationId: string; paused: boolean },
+    { success: boolean; paused: boolean }
+  >(functions, 'setMindsetAutomationApi'),
+  simulateMindsetConversation: httpsCallable<
+    MindsetTestTurnInput,
+    MindsetTestTurnResult
+  >(functions, 'simulateMindsetConversationApi'),
+
   // Dashboard & Stats
   getDashboardStats: httpsCallable<{ accountId?: string }, DashboardStats>(functions, 'getDashboardStats'),
 

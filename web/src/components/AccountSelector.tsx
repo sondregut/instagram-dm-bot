@@ -1,9 +1,10 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useCallback, useContext, useState, useEffect, ReactNode } from 'react';
 import { cloudFunctions, InstagramAccount } from '@/lib/firebase';
 import { cn } from '@/lib/utils';
 import { styles } from '@/lib/styles';
+import { isDashboardReviewMode, reviewAccount } from '@/lib/mindsetReview';
 
 // ============================================
 // ACCOUNT CONTEXT
@@ -42,12 +43,13 @@ export function AccountProvider({ children }: AccountProviderProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchAccounts = async () => {
+  const fetchAccounts = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
-      const result = await cloudFunctions.getUserAccounts();
-      const fetchedAccounts = result.data;
+      const fetchedAccounts = isDashboardReviewMode()
+        ? [reviewAccount]
+        : (await cloudFunctions.getUserAccounts()).data;
       setAccounts(fetchedAccounts);
 
       // Restore selected account from localStorage or select first account
@@ -64,11 +66,11 @@ export function AccountProvider({ children }: AccountProviderProps) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchAccounts();
-  }, []);
+    void fetchAccounts();
+  }, [fetchAccounts]);
 
   const selectAccount = (accountId: string) => {
     setSelectedAccountId(accountId);

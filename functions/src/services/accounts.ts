@@ -21,7 +21,7 @@ export async function getAccountByInstagramId(instagramAccountId: string): Promi
   const snapshot = await db.collection('accounts')
     .where('instagramAccountId', '==', instagramAccountId)
     .where('isActive', '==', true)
-    .limit(1)
+    .limit(2)
     .get();
 
   if (snapshot.empty) {
@@ -67,8 +67,13 @@ Be warm and authentic, not robotic.`,
     return null;
   }
 
+  if (snapshot.size !== 1) {
+    console.error('[Accounts] Duplicate active Instagram account mapping rejected');
+    return null;
+  }
+
   const doc = snapshot.docs[0];
-  const account = { id: doc.id, ...doc.data() } as InstagramAccount;
+  const account = { ...doc.data(), id: doc.id } as InstagramAccount;
 
   // Update cache
   accountCache.set(instagramAccountId, { account, timestamp: Date.now() });
@@ -86,7 +91,7 @@ export async function getAccountById(accountId: string): Promise<InstagramAccoun
     return null;
   }
 
-  return { id: doc.id, ...doc.data() } as InstagramAccount;
+  return { ...doc.data(), id: doc.id } as InstagramAccount;
 }
 
 /**
@@ -104,7 +109,7 @@ export async function getAccountByUsername(username: string): Promise<InstagramA
   }
 
   const doc = snapshot.docs[0];
-  return { id: doc.id, ...doc.data() } as InstagramAccount;
+  return { ...doc.data(), id: doc.id } as InstagramAccount;
 }
 
 /**
@@ -116,7 +121,7 @@ export async function getAccountsByUserId(userId: string): Promise<InstagramAcco
     .where('isActive', '==', true)
     .get();
 
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InstagramAccount));
+  return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as InstagramAccount));
 }
 
 /**
@@ -128,7 +133,7 @@ export async function getAllActiveAccounts(): Promise<InstagramAccount[]> {
     .where('connectionStatus', '==', 'connected')
     .get();
 
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as InstagramAccount));
+  return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as InstagramAccount));
 }
 
 /**

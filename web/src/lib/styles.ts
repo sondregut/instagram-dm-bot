@@ -4,7 +4,7 @@ export const styles = {
   button: {
     base: 'inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed',
     variants: {
-      primary: 'bg-gradient-to-r from-accent to-accent-secondary text-white hover:opacity-90 focus:ring-accent',
+      primary: 'bg-accent text-white hover:bg-accent-hover focus:ring-accent active:scale-[0.98]',
       secondary: 'bg-gray-100 text-gray-900 hover:bg-gray-200 focus:ring-gray-500',
       ghost: 'text-gray-600 hover:bg-gray-100 focus:ring-gray-500',
       danger: 'bg-status-error text-white hover:bg-status-error/90 focus:ring-status-error',
@@ -31,17 +31,17 @@ export const styles = {
   // Navigation (dark sidebar)
   nav: {
     item: 'group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-    active: 'bg-gray-800 text-white',
-    inactive: 'text-gray-400 hover:bg-gray-800 hover:text-white',
+    active: 'bg-white/10 text-white shadow-[inset_2px_0_0_rgb(var(--accent))]',
+    inactive: 'text-slate-400 hover:bg-white/5 hover:text-white',
   },
 
   // Sidebar
   sidebar: {
-    base: 'flex h-full w-64 flex-col bg-gray-900',
+    base: 'sticky top-0 hidden h-[100dvh] w-64 flex-shrink-0 flex-col bg-slate-950 md:flex',
     logo: 'flex h-16 items-center px-6',
-    logoIcon: 'h-8 w-8 rounded-lg bg-gradient-to-br from-accent to-accent-secondary',
+    logoIcon: 'flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-white',
     logoText: 'text-lg font-semibold text-white',
-    accountBox: 'rounded-lg bg-gray-800 p-2',
+    accountBox: 'rounded-xl border border-white/10 bg-white/5 p-2.5',
   },
 
   // Status badges
@@ -56,7 +56,7 @@ export const styles = {
 
   // Avatar
   avatar: {
-    base: 'rounded-full bg-gradient-to-br from-accent to-accent-secondary flex items-center justify-center text-white font-semibold',
+    base: 'rounded-full bg-accent flex items-center justify-center text-white font-semibold',
     sizes: {
       xs: 'h-5 w-5 text-xs',
       sm: 'h-8 w-8 text-sm',
@@ -101,7 +101,7 @@ export const styles = {
     info: 'rounded-xl bg-blue-50 p-6 border border-blue-200',
     success: 'rounded-xl bg-green-50 p-6 border border-green-200',
     warning: 'rounded-xl bg-yellow-50 p-6 border border-yellow-200',
-    accent: 'rounded-xl bg-gradient-to-r from-purple-50 to-pink-50 p-4 border border-purple-200',
+    accent: 'rounded-xl bg-accent-muted p-4 border border-accent/20',
   },
 } as const;
 

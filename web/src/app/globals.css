@@ -10,18 +10,16 @@
 
   /* Surface (background) colors */
   --surface: 255 255 255;
-  --surface-raised: 250 250 250;
-  --surface-sunken: 245 245 245;
-  --surface-border: 229 229 229;
+  --surface-raised: 250 250 249;
+  --surface-sunken: 245 245 244;
+  --surface-border: 226 226 220;
 
-  /* Accent - Instagram pink */
-  --accent: 225 48 108;
-  --accent-hover: 193 53 132;
-  --accent-muted: 253 232 240;
-
-  /* Secondary accent - Instagram purple */
-  --accent-secondary: 131 58 180;
-  --accent-secondary-muted: 243 232 255;
+  /* Single product accent */
+  --accent: 18 124 94;
+  --accent-hover: 15 102 78;
+  --accent-muted: 225 244 237;
+  --accent-secondary: 18 124 94;
+  --accent-secondary-muted: 225 244 237;
 
   /* Status */
   --status-success: 34 197 94;

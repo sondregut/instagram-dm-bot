@@ -227,6 +227,14 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "nextStepAt", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "mindset_followups",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "dueAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

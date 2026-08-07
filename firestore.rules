@@ -114,6 +114,25 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Athlete Mindset DM conversations are available only through ownership-
+    // checked callable functions. Browser clients can never read another
+    // recipient's history or mutate routing fields directly.
+    match /mindset_leads/{conversationId} {
+      allow read, write: if false;
+    }
+
+    match /mindset_followups/{followUpId} {
+      allow read, write: if false;
+    }
+
+    match /mindset_handoffs/{handoffId} {
+      allow read, write: if false;
+    }
+
+    match /mindset_comment_events/{eventId} {
+      allow read, write: if false;
+    }
+
     // Comment DM log - Read only for users
     match /comment_dm_log/{logId} {
       allow read: if isResourceOwner();

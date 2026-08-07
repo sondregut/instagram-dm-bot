@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
-import { onAuthChange, login, logout, signup } from '@/lib/firebase';
+import { onAuthChange, login, logout, requestPasswordReset, signup } from '@/lib/firebase';
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
@@ -44,6 +44,10 @@ export function useAuth() {
     }
   };
 
+  const resetPassword = async (email: string) => {
+    await requestPasswordReset(email);
+  };
+
   return {
     user,
     loading,
@@ -51,5 +55,6 @@ export function useAuth() {
     signIn,
     signUp,
     signOut,
+    resetPassword,
   };
 }

@@ -159,7 +159,9 @@ async function getOrCreateConversation(
 
   if (!conversations.empty) {
     const doc = conversations.docs[0];
-    const conversation = { id: doc.id, ...doc.data() } as Conversation;
+    // The Firestore path is authoritative. A stored `id` field must never
+    // redirect later writes into another recipient's conversation document.
+    const conversation = { ...doc.data(), id: doc.id } as Conversation;
 
     // Update profile picture if it's stale (older than 24 hours) or missing
     const now = admin.firestore.Timestamp.now();
