@@ -145,6 +145,7 @@ test('all deterministic responses fit Instagram copy constraints', () => {
     'price_objection', 'price_question', 'trial_claimed', 'trial_started', 'subscribed',
     'onboarding_help', 'complete', 'not_yet', 'problem', 'reason_navigation',
     'reason_link', 'reason_unsure', 'reason_no_time', 'human',
+    'gratitude',
   ];
   const stages: MindsetStage[] = [
     'awaiting_download_status',
@@ -164,6 +165,16 @@ test('all deterministic responses fit Instagram copy constraints', () => {
       });
     }
   }
+});
+
+test('answers simple gratitude casually without restarting the funnel', () => {
+  const plan = buildMindsetActionPlan('gratitude', 'link_sent', activationUrl);
+  assert.ok(plan);
+  assert.equal(plan.message, 'No problem! Let me know what you think.');
+  assert.equal(plan.nextStage, 'link_sent');
+  assert.doesNotMatch(plan.message, /[?—]/);
+  assert.equal(plan.buttons, undefined);
+  assert.equal(plan.quickReplies, undefined);
 });
 
 test('simulates the screenshot conversation without generic fallbacks', () => {

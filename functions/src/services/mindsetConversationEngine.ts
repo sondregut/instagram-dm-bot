@@ -146,6 +146,12 @@ export function buildMindsetActionPlan(
         nextStage: 'ai_follow_up',
       };
 
+    case 'gratitude':
+      return {
+        message: 'No problem! Let me know what you think.',
+        nextStage: stage,
+      };
+
     case 'reason_navigation':
       return {
         message: "During setup, keep going until the mental-rep preview. If you already have access, open Home and tap Today's Mental Rep. What screen are you on?",

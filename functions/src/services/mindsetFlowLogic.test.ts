@@ -65,6 +65,11 @@ test('classifies the activation replies that drive the state machine', () => {
   assert.equal(classifyMindsetReply("Haven't had time yet"), 'not_yet');
   assert.equal(classifyMindsetReply("I didn't use it"), 'not_yet');
   assert.equal(classifyMindsetReply("No, I didn't download it"), 'not_yet');
+  assert.equal(classifyMindsetReply('Thanks'), 'gratitude');
+  assert.equal(classifyMindsetReply('Thank you so much!'), 'gratitude');
+  assert.equal(classifyMindsetReply('Thanks for your help'), 'gratitude');
+  assert.equal(classifyMindsetReply('Got it, thanks'), 'gratitude');
+  assert.equal(classifyMindsetReply('I got it'), 'downloaded');
   assert.equal(classifyMindsetReply('Can I talk to Sondre?'), 'human');
 });
 
@@ -129,6 +134,7 @@ test('feeds the canonical app journey and navigation rules to Claude', () => {
   assert.match(onboardingPrompt, /guided mental-rep preview/i);
   assert.match(onboardingPrompt, /personalized result and then the current App Store subscription offer/i);
   assert.match(onboardingPrompt, /ask what they see before giving one navigation step/i);
+  assert.match(onboardingPrompt, /only thank you or acknowledge/i);
   assert.match(onboardingPrompt, /This Instagram assistant is not Aomi/i);
   assert.match(onboardingPrompt, /current Instagram conversation as a sealed conversation/i);
   assert.match(onboardingPrompt, /another Instagram user's conversation/i);

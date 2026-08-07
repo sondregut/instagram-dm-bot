@@ -436,7 +436,7 @@ async function handleMindsetAction(
   }
 
   if (CLOSED_FUNNEL_STAGES.has(lead.stage)
-      && !['onboarding_help', 'complete', 'human', 'subscribed'].includes(action)) {
+      && !['onboarding_help', 'complete', 'human', 'subscribed', 'gratitude'].includes(action)) {
     console.log(`[Mindset] Ignoring stale funnel action in ${lead.stage}`);
     return;
   }
@@ -552,6 +552,7 @@ export async function handleMindsetMessage(
   const intent = classifyMindsetReply(text);
   const isNewPaidConfirmation = intent === 'subscribed'
     && !['subscription_claimed', 'subscribed'].includes(lead.stage);
+  const isSafeTerminalAcknowledgement = intent === 'gratitude';
   if (intent !== 'other'
       && (![
         'trial_claimed',
@@ -559,7 +560,7 @@ export async function handleMindsetMessage(
         'trial_started',
         'subscribed',
         'completed',
-      ].includes(lead.stage) || isNewPaidConfirmation)) {
+      ].includes(lead.stage) || isNewPaidConfirmation || isSafeTerminalAcknowledgement)) {
     await handleMindsetAction(intent, senderId, lead, ref, account);
     await profileRefreshPromise;
     return true;

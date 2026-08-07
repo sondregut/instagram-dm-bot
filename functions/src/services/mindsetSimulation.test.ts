@@ -127,6 +127,21 @@ test('accepts legacy quick-reply payloads without returning suggested replies', 
   assert.deepEqual(problem.quickReplies, []);
 });
 
+test('responds naturally when the person only says thanks', async () => {
+  for (const message of ['Thanks', 'Thank you so much!', 'Thanks for your help', 'Got it, thanks']) {
+    const result = await simulateMindsetTurn(
+      'link_sent',
+      message,
+      activationUrl
+    );
+    assert.equal(result.reply, 'No problem! Let me know what you think.');
+    assert.equal(result.nextStage, 'link_sent');
+    assert.equal(result.createsHandoff, false);
+    assert.deepEqual(result.quickReplies, []);
+    assert.deepEqual(result.buttons, []);
+  }
+});
+
 test('silently hands off provider fallbacks and forbidden handoff copy', async () => {
   const unavailable = await simulateMindsetTurn(
     'ai_follow_up',

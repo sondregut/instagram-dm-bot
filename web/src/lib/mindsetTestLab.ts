@@ -289,6 +289,13 @@ export async function simulateReviewMindsetTurn(
     );
   }
 
+  if (/^(?:thanks?(?:\s+(?:so much|a lot|for (?:this|that|the help|your help)))?|thank you(?:\s+(?:so much|very much|for (?:this|that|the help|your help)))?|thx|ty|cheers|appreciate it|much appreciated|got it(?:,?\s*thanks?)?)[.!\s🙏😊🙂]*$/.test(message)) {
+    return result(
+      'No problem! Let me know what you think.',
+      input.stage
+    );
+  }
+
   if (/\b(downloaded|installed|got it|opened it)\b/.test(message)) {
     return result(
       'Great! The setup personalizes a short mental-rep preview before the offer. Did you make it to the preview?',
