@@ -4,6 +4,7 @@ import {
   buildMindsetActivationUrl,
   buildMindsetAISystemPrompt,
   buildMindsetAppOpenUrl,
+  buildMindsetDownloadDestination,
   chooseMindsetPublicReply,
   classifyMindsetReply,
   containsConfiguredMindsetKeyword,
@@ -138,6 +139,18 @@ test('uses a casual feedback check only before the tracked app link is clicked',
   assert.equal(getMindsetNoClickFollowUpMessage(true), null);
   assert.equal(getMindsetNoClickFollowUpMessage(false), MINDSET_NO_CLICK_FOLLOW_UP_MESSAGE);
   assert.doesNotMatch(MINDSET_NO_CLICK_FOLLOW_UP_MESSAGE, /—|subscrib|paid/i);
+});
+
+test('adds conversation attribution to a campaign-specific HTTPS destination', () => {
+  const destination = new URL(buildMindsetDownloadDestination(
+    'lead-token',
+    'https://athletemindset.app/app?source=campaign'
+  ));
+  assert.equal(destination.origin + destination.pathname, 'https://athletemindset.app/app');
+  assert.equal(destination.searchParams.get('source'), 'campaign');
+  assert.equal(destination.searchParams.get('utm_source'), 'instagram');
+  assert.equal(destination.searchParams.get('utm_medium'), 'dm');
+  assert.equal(destination.searchParams.get('ig_lead'), 'lead-token');
 });
 
 test('silently suppresses handoff fallback copy', () => {

@@ -3,8 +3,11 @@ import assert from 'node:assert/strict';
 import {
   campaignTargetsPost,
   campaignsOverlap,
+  isWaitingForNextPost,
   isCampaignStatusActive,
   normalizeMindsetCampaignKeyword,
+  normalizeMindsetCampaignPostMode,
+  selectNextCampaignPostId,
   shouldUseRuntimeCampaign,
   validateMindsetCampaignInput,
 } from './mindsetCampaignLogic';
@@ -48,9 +51,16 @@ test('disables the environment fallback when a stored campaign becomes active', 
 });
 
 test('matches all posts for an empty target list and exact posts otherwise', () => {
-  assert.equal(campaignTargetsPost([], 'post_7'), true);
-  assert.equal(campaignTargetsPost(['post_2'], 'post_2'), true);
-  assert.equal(campaignTargetsPost(['post_2'], 'post_7'), false);
+  assert.equal(campaignTargetsPost({ postMode: 'any', postIds: [] }, 'post_7'), true);
+  assert.equal(campaignTargetsPost({ postMode: 'specific', postIds: ['post_2'] }, 'post_2'), true);
+  assert.equal(campaignTargetsPost({ postMode: 'specific', postIds: ['post_2'] }, 'post_7'), false);
+  assert.equal(campaignTargetsPost({ postMode: 'next', postIds: [], nextPostId: null }, 'post_7'), false);
+  assert.equal(campaignTargetsPost({ postMode: 'next', postIds: [], nextPostId: 'post_7' }, 'post_7'), true);
+});
+
+test('keeps legacy campaign post targeting compatible', () => {
+  assert.equal(normalizeMindsetCampaignPostMode({ postIds: [] }), 'any');
+  assert.equal(normalizeMindsetCampaignPostMode({ postIds: ['post_2'] }), 'specific');
 });
 
 test('detects overlapping active campaign scopes', () => {
@@ -62,6 +72,79 @@ test('detects overlapping active campaign scopes', () => {
     { keyword: 'START', postIds: ['post_2'] },
     { keyword: 'START', postIds: ['post_4'] }
   ), false);
+  assert.equal(campaignsOverlap(
+    { keyword: 'START', postMode: 'next', postIds: [], nextPostId: null },
+    { keyword: 'START', postMode: 'specific', postIds: ['post_4'] }
+  ), false);
+  assert.equal(campaignsOverlap(
+    { keyword: 'START', postMode: 'next', postIds: [], nextPostId: 'post_4' },
+    { keyword: 'START', postMode: 'specific', postIds: ['post_4'] }
+  ), true);
+  assert.equal(campaignsOverlap(
+    { keyword: 'START', postMode: 'next', postIds: [], nextPostId: null },
+    { keyword: 'START', postMode: 'next', postIds: [], nextPostId: null }
+  ), true);
+});
+
+test('identifies only unresolved Next post campaigns as waiting', () => {
+  assert.equal(isWaitingForNextPost({ postMode: 'next', postIds: [], nextPostId: null }), true);
+  assert.equal(isWaitingForNextPost({ postMode: 'next', postIds: [], nextPostId: 'post_2' }), false);
+  assert.equal(isWaitingForNextPost({ postMode: 'any', postIds: [], nextPostId: null }), false);
+});
+
+test('selects and locks to the earliest post published after activation', () => {
+  const activation = Date.parse('2026-08-08T12:00:00.500Z');
+  const posts = [
+    { id: 'second-new-post', timestamp: '2026-08-08T12:10:00.000Z' },
+    { id: 'old-post', timestamp: '2026-08-08T11:55:00.000Z' },
+    { id: 'first-new-post', timestamp: '2026-08-08T12:05:00.000Z' },
+  ];
+
+  assert.equal(selectNextCampaignPostId(posts, ['old-post'], activation), 'first-new-post');
+  assert.equal(selectNextCampaignPostId(posts, ['old-post', 'first-new-post'], activation), 'second-new-post');
+  assert.equal(selectNextCampaignPostId([
+    { id: 'old-post', timestamp: '2026-08-08T11:55:00.000Z' },
+  ], ['old-post'], activation), null);
+});
+
+test('allows a same-second new post only when it was not present at activation', () => {
+  const activation = Date.parse('2026-08-08T12:00:00.900Z');
+  const posts = [
+    { id: 'baseline-post', timestamp: '2026-08-08T12:00:00.000Z' },
+    { id: 'new-post', timestamp: '2026-08-08T12:00:00.000Z' },
+  ];
+
+  assert.equal(selectNextCampaignPostId(posts, ['baseline-post'], activation), 'new-post');
+});
+
+test('uses Instagram reverse chronological order to break same-second ties', () => {
+  const activation = Date.parse('2026-08-08T12:00:00.000Z');
+  const posts = [
+    { id: 'published-second', timestamp: '2026-08-08T12:05:00.000Z' },
+    { id: 'published-first', timestamp: '2026-08-08T12:05:00.000Z' },
+  ];
+
+  assert.equal(selectNextCampaignPostId(posts, [], activation), 'published-first');
+});
+
+test('validates post selection against the explicit targeting mode', () => {
+  const nextErrors = validateMindsetCampaignInput({
+    name: 'Next post launch',
+    keyword: 'FOCUS',
+    postMode: 'next',
+    postIds: [],
+    status: 'draft',
+  }, 'test');
+  assert.deepEqual(nextErrors, []);
+
+  const specificErrors = validateMindsetCampaignInput({
+    name: 'Specific post launch',
+    keyword: 'FOCUS',
+    postMode: 'specific',
+    postIds: [],
+    status: 'draft',
+  }, 'test');
+  assert.ok(specificErrors.some((error) => error.includes('at least one post')));
 });
 
 test('validates the optional public comment reply independently from the DM', () => {

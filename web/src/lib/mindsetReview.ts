@@ -9,6 +9,11 @@ import {
   MindsetOverview,
 } from './firebase';
 import { DEFAULT_MINDSET_PUBLIC_REPLY_TEXT } from './mindsetPublicReplies';
+import {
+  DEFAULT_MINDSET_CAMPAIGN_JOURNEY,
+  normalizeMindsetCampaignJourney,
+  validateMindsetCampaignJourney,
+} from './mindsetJourney';
 
 const REVIEW_CAMPAIGNS_KEY = 'athlete-mindset-review-campaigns';
 const REVIEW_CONVERSATIONS_KEY = 'athlete-mindset-review-conversations-v3';
@@ -253,9 +258,14 @@ const reviewSystemCampaign: MindsetCampaign = {
   name: 'Controlled Instagram test',
   keyword: 'AMDMTEST8472',
   postIds: [],
+  postMode: 'any',
+  nextPostId: null,
+  nextPostActivatedAt: null,
+  nextPostResolvedAt: null,
   status: 'test',
   publicReplyEnabled: true,
   publicReplyText: DEFAULT_MINDSET_PUBLIC_REPLY_TEXT,
+  journey: DEFAULT_MINDSET_CAMPAIGN_JOURNEY,
   template: 'athlete_mindset_download',
   isSystem: true,
   createdAt: null,
@@ -268,9 +278,14 @@ const initialCustomCampaigns: MindsetCampaign[] = [
     name: 'MINDSET future launch',
     keyword: 'MINDSET',
     postIds: [],
+    postMode: 'any',
+    nextPostId: null,
+    nextPostActivatedAt: null,
+    nextPostResolvedAt: null,
     status: 'draft',
     publicReplyEnabled: true,
     publicReplyText: DEFAULT_MINDSET_PUBLIC_REPLY_TEXT,
+    journey: DEFAULT_MINDSET_CAMPAIGN_JOURNEY,
     template: 'athlete_mindset_download',
     isSystem: false,
     createdAt: minutesAgo(1440),
@@ -287,8 +302,13 @@ function readStoredReviewCampaigns(): MindsetCampaign[] {
       .filter((campaign) => !campaign.isSystem)
       .map((campaign) => ({
         ...campaign,
+        postMode: campaign.postMode || (campaign.postIds.length > 0 ? 'specific' : 'any'),
+        nextPostId: campaign.nextPostId || null,
+        nextPostActivatedAt: campaign.nextPostActivatedAt || null,
+        nextPostResolvedAt: campaign.nextPostResolvedAt || null,
         publicReplyEnabled: campaign.publicReplyEnabled !== false,
         publicReplyText: campaign.publicReplyText || DEFAULT_MINDSET_PUBLIC_REPLY_TEXT,
+        journey: normalizeMindsetCampaignJourney(campaign.journey),
       }));
   } catch {
     return initialCustomCampaigns;
@@ -416,6 +436,9 @@ export async function getReviewCampaigns(): Promise<MindsetCampaignsResult> {
 
 export async function saveReviewCampaign(input: MindsetCampaignInput): Promise<MindsetCampaign> {
   const keyword = input.keyword.trim().toUpperCase();
+  if (input.postMode === 'specific' && input.postIds.length === 0) {
+    throw new Error('Select at least one Instagram post.');
+  }
   if (input.status === 'test' && keyword === 'MINDSET') {
     throw new Error('MINDSET stays reserved for ManyChat during controlled testing.');
   }
@@ -432,20 +455,51 @@ export async function saveReviewCampaign(input: MindsetCampaignInput): Promise<M
       throw new Error('Add between 1 and 5 public replies, with each reply under 180 characters.');
     }
   }
+  const journeyErrors = validateMindsetCampaignJourney(input.journey);
+  if (journeyErrors.length > 0) {
+    throw new Error(`Complete the DM journey: ${journeyErrors.join(', ')}.`);
+  }
   const campaigns = readStoredReviewCampaigns();
   const existingIndex = input.id
     ? campaigns.findIndex((campaign) => campaign.id === input.id)
     : -1;
   const existing = existingIndex >= 0 ? campaigns[existingIndex] : null;
   const now = new Date().toISOString();
+  const preserveNextPostState = input.postMode === 'next'
+    && existing?.postMode === 'next'
+    && Boolean(existing.nextPostActivatedAt);
+  const activatingNextPost = input.postMode === 'next'
+    && input.status === 'test'
+    && !preserveNextPostState;
+  const waitingForNextPost = input.postMode === 'next'
+    && input.status === 'test'
+    && !(preserveNextPostState && existing?.nextPostId);
+  if (waitingForNextPost) {
+    const otherWaitingCampaign = campaigns.find((campaign) => (
+      campaign.id !== input.id
+      && (campaign.status === 'test' || campaign.status === 'live')
+      && campaign.postMode === 'next'
+      && !campaign.nextPostId
+    ));
+    if (otherWaitingCampaign) {
+      throw new Error(`Only one automation can wait for the next post. ${otherWaitingCampaign.name} is already waiting.`);
+    }
+  }
   const campaign: MindsetCampaign = {
     id: existing?.id || `review-${crypto.randomUUID()}`,
     name: input.name.trim(),
     keyword,
-    postIds: input.postIds,
+    postIds: input.postMode === 'specific' ? input.postIds : [],
+    postMode: input.postMode,
+    nextPostId: preserveNextPostState ? existing?.nextPostId || null : null,
+    nextPostActivatedAt: preserveNextPostState
+      ? existing?.nextPostActivatedAt || null
+      : activatingNextPost ? now : null,
+    nextPostResolvedAt: preserveNextPostState ? existing?.nextPostResolvedAt || null : null,
     status: input.status,
     publicReplyEnabled: input.publicReplyEnabled,
     publicReplyText: input.publicReplyText.trim(),
+    journey: normalizeMindsetCampaignJourney(input.journey),
     template: 'athlete_mindset_download',
     isSystem: false,
     createdAt: existing?.createdAt || now,

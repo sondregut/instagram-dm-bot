@@ -4,7 +4,7 @@ import * as functions from 'firebase-functions';
 import { db, InstagramAccount } from '../firebase';
 import { MindsetStage } from './mindsetConversationEngine';
 import { generateIsolatedAIResponseWithStatus } from './ai';
-import { sendInstagramDM } from './instagram';
+import { getUserPosts, sendInstagramDM } from './instagram';
 import {
   buildMindsetActivationUrl,
   DEFAULT_MINDSET_PUBLIC_REPLY_TEXT,
@@ -15,8 +15,11 @@ import {
 import { simulateMindsetTurn } from './mindsetSimulation';
 import {
   campaignsOverlap,
+  isWaitingForNextPost,
+  MindsetCampaignPostMode,
   MindsetCampaignStatus,
   normalizeMindsetCampaignKeyword,
+  normalizeMindsetCampaignPostMode,
   validateMindsetCampaignInput,
 } from './mindsetCampaignLogic';
 import {
@@ -25,6 +28,8 @@ import {
   isMindsetTargetAccount,
   MindsetCampaign,
   MINDSET_CAMPAIGNS_COLLECTION,
+  MINDSET_NEXT_POST_LOCKS_COLLECTION,
+  reconcileNextPostCampaigns,
   runtimeMindsetCampaign,
   shouldIncludeRuntimeMindsetCampaign,
 } from './mindsetCampaigns';
@@ -34,6 +39,7 @@ import {
   isMindsetConversationRecordSelfConsistent,
   isMindsetHistoryEntryInConversation,
 } from './mindsetConversationIsolation';
+import { normalizeMindsetCampaignJourney } from './mindsetCampaignJourney';
 
 const LEADS = 'mindset_leads';
 const FOLLOWUPS = 'mindset_followups';
@@ -341,14 +347,20 @@ async function loadMindsetInboxPage(
 }
 
 function serializeCampaign(campaign: MindsetCampaign) {
+  const postMode = normalizeMindsetCampaignPostMode(campaign);
   return {
     id: campaign.id,
     name: campaign.name,
     keyword: campaign.keyword,
     postIds: campaign.postIds || [],
+    postMode,
+    nextPostId: postMode === 'next' ? campaign.nextPostId || null : null,
+    nextPostActivatedAt: postMode === 'next' ? toIso(campaign.nextPostActivatedAt) : null,
+    nextPostResolvedAt: postMode === 'next' ? toIso(campaign.nextPostResolvedAt) : null,
     status: campaign.status,
     publicReplyEnabled: campaign.publicReplyEnabled !== false,
     publicReplyText: campaign.publicReplyText || DEFAULT_MINDSET_PUBLIC_REPLY_TEXT,
+    journey: normalizeMindsetCampaignJourney(campaign.journey),
     template: campaign.template,
     isSystem: campaign.isSystem === true,
     createdAt: toIso(campaign.createdAt),
@@ -442,7 +454,11 @@ export const getMindsetOverview = functions.https.onCall(async (data, context) =
   ]);
   const now = Date.now();
   const dayAgo = now - 24 * 60 * 60 * 1000;
-  const ownerCampaigns = storedCampaigns.filter((campaign) => campaign.ownerUserId === ownerUserId);
+  const ownerCampaigns = await reconcileNextPostCampaigns(
+    account,
+    storedCampaigns.filter((campaign) => campaign.ownerUserId === ownerUserId),
+    getBotMode()
+  );
   const systemCampaign = shouldIncludeRuntimeMindsetCampaign(ownerCampaigns, getBotMode())
     ? runtimeMindsetCampaign(account)
     : null;
@@ -687,7 +703,11 @@ export const getMindsetCampaignsApi = functions.https.onCall(async (data, contex
   const ownerUserId = requireAuth(context);
   const account = await requireOwnedMindsetAccount(ownerUserId, data?.accountId);
   const storedCampaigns = await getStoredMindsetCampaigns(account.id);
-  const ownerCampaigns = storedCampaigns.filter((campaign) => campaign.ownerUserId === ownerUserId);
+  const ownerCampaigns = await reconcileNextPostCampaigns(
+    account,
+    storedCampaigns.filter((campaign) => campaign.ownerUserId === ownerUserId),
+    getBotMode()
+  );
   const systemCampaign = shouldIncludeRuntimeMindsetCampaign(ownerCampaigns, getBotMode())
     ? runtimeMindsetCampaign(account)
     : null;
@@ -713,12 +733,20 @@ export const saveMindsetCampaignApi = functions.https.onCall(async (data, contex
   const keyword = normalizeMindsetCampaignKeyword(
     typeof data?.keyword === 'string' ? data.keyword : ''
   );
-  const postIds: string[] = Array.isArray(data?.postIds)
+  const requestedPostIds: string[] = Array.isArray(data?.postIds)
     ? Array.from(new Set<string>((data.postIds as unknown[])
       .filter((value: unknown): value is string => typeof value === 'string')
       .map((value: string) => value.trim())
       .filter(Boolean)))
     : [];
+  const allowedPostModes: MindsetCampaignPostMode[] = ['any', 'specific', 'next'];
+  if (data?.postMode !== undefined && !allowedPostModes.includes(data.postMode)) {
+    throw new functions.https.HttpsError('invalid-argument', 'Invalid post targeting mode');
+  }
+  const postMode = allowedPostModes.includes(data?.postMode)
+    ? data.postMode as MindsetCampaignPostMode
+    : normalizeMindsetCampaignPostMode({ postIds: requestedPostIds });
+  const postIds = postMode === 'specific' ? requestedPostIds : [];
   const allowedStatuses: MindsetCampaignStatus[] = ['draft', 'test', 'live', 'paused'];
   const status = allowedStatuses.includes(data?.status)
     ? data.status as MindsetCampaignStatus
@@ -727,14 +755,17 @@ export const saveMindsetCampaignApi = functions.https.onCall(async (data, contex
   const publicReplyText = typeof data?.publicReplyText === 'string'
     ? data.publicReplyText.trim()
     : DEFAULT_MINDSET_PUBLIC_REPLY_TEXT;
+  const journey = normalizeMindsetCampaignJourney(data?.journey);
   const mode = getBotMode();
   const validationErrors = validateMindsetCampaignInput({
     name,
     keyword,
-    postIds,
+    postIds: requestedPostIds,
+    postMode,
     status,
     publicReplyEnabled,
     publicReplyText,
+    journey,
   }, mode);
   if (validationErrors.length > 0) {
     throw new functions.https.HttpsError('failed-precondition', validationErrors.join('. '));
@@ -750,6 +781,7 @@ export const saveMindsetCampaignApi = functions.https.onCall(async (data, contex
   const campaignRef = id
     ? db.collection(MINDSET_CAMPAIGNS_COLLECTION).doc(id)
     : db.collection(MINDSET_CAMPAIGNS_COLLECTION).doc();
+  let existingCampaign: MindsetCampaign | null = null;
   if (id) {
     const existingSnapshot = await campaignRef.get();
     if (!existingSnapshot.exists) {
@@ -759,23 +791,77 @@ export const saveMindsetCampaignApi = functions.https.onCall(async (data, contex
     if (existing.ownerUserId !== ownerUserId || existing.accountId !== account.id) {
       throw new functions.https.HttpsError('permission-denied', 'Not your campaign');
     }
+    const existingPostIds = Array.isArray(existing.postIds) ? existing.postIds : [];
+    existingCampaign = {
+      ...existing,
+      id: existingSnapshot.id,
+      postIds: existingPostIds,
+      postMode: normalizeMindsetCampaignPostMode({
+        postIds: existingPostIds,
+        postMode: existing.postMode,
+      }),
+    } as MindsetCampaign;
+  }
+
+  let nextPostId: string | undefined;
+  let nextPostBaselineIds: string[] | undefined;
+  let nextPostActivatedAt: admin.firestore.Timestamp | undefined;
+  let nextPostResolvedAt: admin.firestore.Timestamp | undefined;
+  if (postMode === 'next' && existingCampaign?.postMode === 'next') {
+    nextPostId = existingCampaign.nextPostId || undefined;
+    nextPostBaselineIds = Array.isArray(existingCampaign.nextPostBaselineIds)
+      ? existingCampaign.nextPostBaselineIds
+      : undefined;
+    nextPostActivatedAt = existingCampaign.nextPostActivatedAt;
+    nextPostResolvedAt = existingCampaign.nextPostResolvedAt;
   }
 
   if (status === 'test' || status === 'live') {
     const storedCampaigns = await getStoredMindsetCampaigns(account.id);
-    const activeCampaigns = getActiveStoredMindsetCampaigns(storedCampaigns, mode).filter((campaign) =>
+    const reconciledCampaigns = await reconcileNextPostCampaigns(account, storedCampaigns, mode);
+    const reconciledExisting = reconciledCampaigns.find((campaign) => campaign.id === campaignRef.id);
+    if (postMode === 'next' && reconciledExisting?.postMode === 'next') {
+      nextPostId = reconciledExisting.nextPostId || nextPostId;
+      nextPostBaselineIds = reconciledExisting.nextPostBaselineIds || nextPostBaselineIds;
+      nextPostActivatedAt = reconciledExisting.nextPostActivatedAt || nextPostActivatedAt;
+      nextPostResolvedAt = reconciledExisting.nextPostResolvedAt || nextPostResolvedAt;
+    }
+    const activeCampaigns = getActiveStoredMindsetCampaigns(reconciledCampaigns, mode).filter((campaign) =>
       campaign.id !== campaignRef.id
       && campaign.ownerUserId === ownerUserId
     );
+    if (postMode === 'next' && !nextPostId) {
+      const waitingNextCampaign = activeCampaigns.find((campaign) => isWaitingForNextPost(campaign));
+      if (waitingNextCampaign) {
+        throw new functions.https.HttpsError(
+          'already-exists',
+          `Only one automation can wait for the next post. ${waitingNextCampaign.name} is already waiting.`
+        );
+      }
+    }
     const collision = activeCampaigns.find((campaign) => campaignsOverlap(
-      { keyword, postIds },
-      { keyword: campaign.keyword, postIds: campaign.postIds || [] }
+      { keyword, postIds, postMode, nextPostId },
+      {
+        keyword: campaign.keyword,
+        postIds: campaign.postIds || [],
+        postMode: campaign.postMode,
+        nextPostId: campaign.nextPostId,
+      }
     ));
     if (collision) {
       throw new functions.https.HttpsError(
         'already-exists',
         `This keyword and post selection overlaps with ${collision.name}`
       );
+    }
+
+    if (postMode === 'next'
+        && (!nextPostActivatedAt || !Array.isArray(nextPostBaselineIds))) {
+      const baselinePosts = await getUserPosts(account, 100);
+      nextPostBaselineIds = baselinePosts.map((post) => post.id);
+      nextPostActivatedAt = admin.firestore.Timestamp.now();
+      nextPostId = undefined;
+      nextPostResolvedAt = undefined;
     }
   }
 
@@ -786,17 +872,70 @@ export const saveMindsetCampaignApi = functions.https.onCall(async (data, contex
     name,
     keyword,
     postIds,
+    postMode,
     status,
     publicReplyEnabled,
     publicReplyText,
+    journey,
     template: 'athlete_mindset_download',
     updatedAt: now,
     ...(id ? {} : { createdAt: now }),
   };
-  await campaignRef.set(campaign, { merge: true });
+  const nextPostFields: FirebaseFirestore.DocumentData = postMode === 'next'
+    ? {
+      nextPostId: nextPostId || admin.firestore.FieldValue.delete(),
+      nextPostBaselineIds: Array.isArray(nextPostBaselineIds)
+        ? nextPostBaselineIds
+        : admin.firestore.FieldValue.delete(),
+      nextPostActivatedAt: nextPostActivatedAt || admin.firestore.FieldValue.delete(),
+      nextPostResolvedAt: nextPostResolvedAt || admin.firestore.FieldValue.delete(),
+    }
+    : {
+      nextPostId: admin.firestore.FieldValue.delete(),
+      nextPostBaselineIds: admin.firestore.FieldValue.delete(),
+      nextPostActivatedAt: admin.firestore.FieldValue.delete(),
+      nextPostResolvedAt: admin.firestore.FieldValue.delete(),
+    };
+  const waitingForNextPost = (status === 'test' || status === 'live')
+    && postMode === 'next'
+    && !nextPostId;
+  const nextPostLockRef = db.collection(MINDSET_NEXT_POST_LOCKS_COLLECTION).doc(account.id);
+  await db.runTransaction(async (transaction) => {
+    const lockSnapshot = await transaction.get(nextPostLockRef);
+    const lock = lockSnapshot.data() as { campaignId?: string; campaignName?: string } | undefined;
+    if (waitingForNextPost) {
+      if (lock?.campaignId && lock.campaignId !== campaignRef.id) {
+        throw new functions.https.HttpsError(
+          'already-exists',
+          `Only one automation can wait for the next post. ${lock.campaignName || 'Another automation'} is already waiting.`
+        );
+      }
+      transaction.set(nextPostLockRef, {
+        accountId: account.id,
+        ownerUserId,
+        campaignId: campaignRef.id,
+        campaignName: name,
+        updatedAt: now,
+      });
+    } else if (lock?.campaignId === campaignRef.id) {
+      transaction.delete(nextPostLockRef);
+    }
+    transaction.set(campaignRef, { ...campaign, ...nextPostFields }, { merge: true });
+  });
+
+  const responseCampaign: MindsetCampaign = {
+    id: campaignRef.id,
+    ...campaign,
+    ...(postMode === 'next' ? {
+      nextPostId,
+      nextPostBaselineIds,
+      nextPostActivatedAt,
+      nextPostResolvedAt,
+    } : {}),
+  };
 
   return {
     success: true,
-    campaign: serializeCampaign({ id: campaignRef.id, ...campaign }),
+    campaign: serializeCampaign(responseCampaign),
   };
 });

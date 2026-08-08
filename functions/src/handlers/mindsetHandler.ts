@@ -19,9 +19,6 @@ import {
   chooseMindsetPublicReply,
   classifyMindsetReply,
   constrainMindsetAIReply,
-  getDownloadCheckDelayMs,
-  getMindsetMilestoneFollowUpDelayMs,
-  getMindsetNoClickFollowUpMessage,
   hasMindsetFollowUpCapacity,
   isWithinMessagingWindow,
   MAX_UNANSWERED_MINDSET_FOLLOW_UPS,
@@ -38,7 +35,7 @@ import {
   stageAfterActivationEvent,
   stageAfterConversionEvent,
 } from '../services/mindsetTrackingLogic';
-import { getBotMode, isMindsetModeActive } from '../utils/runtimeMode';
+import { isMindsetModeActive } from '../utils/runtimeMode';
 import {
   isMindsetAccountAllowed,
   resolveMindsetCampaignForComment,
@@ -50,6 +47,11 @@ import {
   isMindsetFollowUpIdentityMatch,
   isMindsetHistoryEntryInConversation,
 } from '../services/mindsetConversationIsolation';
+import {
+  mindsetCampaignFollowUpDelayMs,
+  MindsetCampaignJourney,
+  normalizeMindsetCampaignJourney,
+} from '../services/mindsetCampaignJourney';
 
 const LEADS = 'mindset_leads';
 const COMMENT_EVENTS = 'mindset_comment_events';
@@ -85,6 +87,7 @@ interface MindsetLead {
   initialMediaId: string;
   campaignId?: string;
   campaignName?: string;
+  campaignJourney?: MindsetCampaignJourney;
   triggerKeyword: string;
   linkToken: string;
   stage: MindsetStage;
@@ -146,6 +149,10 @@ function isAllowedAccount(account: InstagramAccount): boolean {
   return isMindsetAccountAllowed(account);
 }
 
+function journeyForLead(lead: Pick<MindsetLead, 'campaignJourney'>): MindsetCampaignJourney {
+  return normalizeMindsetCampaignJourney(lead.campaignJourney);
+}
+
 async function claimCommentEvent(eventId: string, accountId: string): Promise<boolean> {
   const ref = db.collection(COMMENT_EVENTS).doc(safeDocumentId(`${accountId}_${eventId}`));
   const now = admin.firestore.Timestamp.now();
@@ -204,7 +211,8 @@ export async function handleMindsetComment(
   const stage: MindsetStage = existingLead && CLOSED_FUNNEL_STAGES.has(existingLead.stage)
     ? existingLead.stage
     : 'awaiting_link_request';
-  const privateMessage = 'Click below to get the link to download Athlete Mindset! Appreciate you, Sondre';
+  const campaignJourney = normalizeMindsetCampaignJourney(campaign.journey);
+  const privateMessage = campaignJourney.openingMessage;
 
   await ref.set({
     id,
@@ -216,6 +224,7 @@ export async function handleMindsetComment(
     initialMediaId: event.media.id,
     campaignId: campaign.id,
     campaignName: campaign.name,
+    campaignJourney,
     triggerKeyword: campaign.keyword,
     linkToken,
     stage,
@@ -233,7 +242,7 @@ export async function handleMindsetComment(
   const privateReplySent = await sendInstagramPrivateReply(
     event.id,
     privateMessage,
-    [{ title: 'Send me the link', payload: `mindset:send_link:${linkToken}` }],
+    [{ title: campaignJourney.openingButtonText, payload: `mindset:send_link:${linkToken}` }],
     account
   );
 
@@ -416,22 +425,27 @@ async function handleMindsetAction(
 
   if (action === 'send_link') {
     if (!token || token !== lead.linkToken) throw new Error('Invalid link-request token');
+    const journey = journeyForLead(lead);
     const sent = await sendInstagramButtonDM(
       senderId,
-      'Click here:',
-      [{ title: 'Download App', url: buildMindsetDownloadRedirectUrl(lead.linkToken) }],
+      journey.linkMessage,
+      [{ title: journey.linkButtonText, url: buildMindsetDownloadRedirectUrl(lead.linkToken) }],
       account
     );
     if (!sent) throw new Error('Download button message failed');
 
     const nextStage = CLOSED_FUNNEL_STAGES.has(lead.stage) ? lead.stage : 'link_sent';
-    await updateLeadHistory(ref, 'assistant', 'Click here: [Download App]', {
+    await updateLeadHistory(ref, 'assistant', `${journey.linkMessage} [${journey.linkButtonText}]`, {
       stage: nextStage,
       lastUserInteractionAt: now,
     });
-    if (!CLOSED_FUNNEL_STAGES.has(lead.stage)) {
+    if (!CLOSED_FUNNEL_STAGES.has(lead.stage) && journey.followUps.noClick.enabled) {
       const updated = { ...lead, stage: nextStage, lastUserInteractionAt: now };
-      await scheduleFollowUp(updated, 'link_reminder', 30 * 60 * 1000);
+      await scheduleFollowUp(
+        updated,
+        'link_reminder',
+        mindsetCampaignFollowUpDelayMs(journey.followUps.noClick)
+      );
     }
     return;
   }
@@ -680,19 +694,29 @@ export async function processMindsetFollowUps(): Promise<number> {
       let message = '';
       let nextStage: MindsetStage | null = null;
       let buttons: Array<{ title: string; url: string }> | null = null;
+      const journey = journeyForLead(lead);
 
-      const noClickFollowUpMessage = getMindsetNoClickFollowUpMessage(Boolean(lead.downloadClickedAt));
-      if (item.type === 'link_reminder' && noClickFollowUpMessage) {
-        message = noClickFollowUpMessage;
-        buttons = [{ title: 'Download App', url: buildMindsetDownloadRedirectUrl(lead.linkToken) }];
-      } else if (item.type === 'download_check' && !lead.appOpenedAt && !lead.firstRepStartedAt) {
-        message = 'Quick check, did you manage to download and open Athlete Mindset?';
+      if (item.type === 'link_reminder'
+          && journey.followUps.noClick.enabled
+          && !lead.downloadClickedAt) {
+        message = journey.followUps.noClick.message;
+        buttons = [{ title: journey.linkButtonText, url: buildMindsetDownloadRedirectUrl(lead.linkToken) }];
+      } else if (item.type === 'download_check'
+          && journey.followUps.downloadCheck.enabled
+          && !lead.appOpenedAt
+          && !lead.firstRepStartedAt) {
+        message = journey.followUps.downloadCheck.message;
         nextStage = 'awaiting_download_status';
-      } else if (item.type === 'use_check' && lead.appOpenedAt && !lead.firstRepStartedAt) {
-        message = 'Did you get a chance to try your first mental rep?';
+      } else if (item.type === 'use_check'
+          && journey.followUps.useCheck.enabled
+          && lead.appOpenedAt
+          && !lead.firstRepStartedAt) {
+        message = journey.followUps.useCheck.message;
         nextStage = 'awaiting_use_status';
-      } else if (item.type === 'feedback_check' && lead.firstRepCompletedAt) {
-        message = 'How did your first mental rep feel?';
+      } else if (item.type === 'feedback_check'
+          && journey.followUps.feedbackCheck.enabled
+          && lead.firstRepCompletedAt) {
+        message = journey.followUps.feedbackCheck.message;
         nextStage = 'awaiting_feedback';
       }
 
@@ -779,6 +803,7 @@ export async function recordMindsetDownloadClick(token: string): Promise<string 
   const resolved = await resolveMindsetLeadByToken(token);
   if (!resolved) return null;
   const { doc, lead } = resolved;
+  const journey = journeyForLead(lead);
   const now = admin.firestore.Timestamp.now();
   const nextStage: MindsetStage = CLOSED_FUNNEL_STAGES.has(lead.stage)
     ? lead.stage
@@ -794,14 +819,16 @@ export async function recordMindsetDownloadClick(token: string): Promise<string 
     downloadClickedAt: now,
     updatedAt: now,
   }, { merge: true });
-  if (!CLOSED_FUNNEL_STAGES.has(lead.stage) && !lead.appOpenedAt) {
+  if (!CLOSED_FUNNEL_STAGES.has(lead.stage)
+      && !lead.appOpenedAt
+      && journey.followUps.downloadCheck.enabled) {
     await scheduleFollowUp(
       updatedLead,
       'download_check',
-      getDownloadCheckDelayMs(getBotMode())
+      mindsetCampaignFollowUpDelayMs(journey.followUps.downloadCheck)
     );
   }
-  return buildMindsetDownloadDestination(token);
+  return buildMindsetDownloadDestination(token, journey.destinationUrl);
 }
 
 export async function recordMindsetActivationLinkClick(
@@ -810,6 +837,7 @@ export async function recordMindsetActivationLinkClick(
   if (!isValidMindsetLeadToken(token)) return null;
   const resolved = await resolveMindsetLeadByToken(token);
   if (!resolved) return null;
+  const journey = journeyForLead(resolved.lead);
   const now = admin.firestore.Timestamp.now();
   await resolved.doc.ref.set({
     activationLinkClickedAt: now,
@@ -817,7 +845,7 @@ export async function recordMindsetActivationLinkClick(
   }, { merge: true });
   return {
     appUrl: buildMindsetAppOpenUrl(token),
-    fallbackUrl: buildMindsetDownloadDestination(token),
+    fallbackUrl: buildMindsetDownloadDestination(token, journey.destinationUrl),
   };
 }
 
@@ -829,6 +857,7 @@ export async function recordMindsetActivationEvent(
   const resolved = await resolveMindsetLeadByToken(token);
   if (!resolved) return false;
   const { doc, lead } = resolved;
+  const journey = journeyForLead(lead);
   const field = activationTimestampField(event);
   const now = admin.firestore.Timestamp.now();
   const isFirstOccurrence = !(lead as unknown as Record<string, unknown>)[field];
@@ -843,22 +872,22 @@ export async function recordMindsetActivationEvent(
   const updatedLead = { ...lead, ...updates, stage: nextStage, updatedAt: now } as MindsetLead;
   if (event === 'app_opened') {
     await cancelPendingFollowUps(lead.id, 'app_opened', ['link_reminder', 'download_check']);
-    if (isFirstOccurrence) {
+    if (isFirstOccurrence && journey.followUps.useCheck.enabled) {
       await scheduleFollowUp(
         updatedLead,
         'use_check',
-        getMindsetMilestoneFollowUpDelayMs('use_check', getBotMode())
+        mindsetCampaignFollowUpDelayMs(journey.followUps.useCheck)
       );
     }
   } else if (event === 'first_rep_started') {
     await cancelPendingFollowUps(lead.id, 'first_rep_started', ['use_check']);
   } else if (event === 'first_rep_completed') {
     await cancelPendingFollowUps(lead.id, 'first_rep_completed', ['use_check']);
-    if (isFirstOccurrence) {
+    if (isFirstOccurrence && journey.followUps.feedbackCheck.enabled) {
       await scheduleFollowUp(
         updatedLead,
         'feedback_check',
-        getMindsetMilestoneFollowUpDelayMs('feedback_check', getBotMode())
+        mindsetCampaignFollowUpDelayMs(journey.followUps.feedbackCheck)
       );
     }
   } else if (event === 'paywall_viewed') {

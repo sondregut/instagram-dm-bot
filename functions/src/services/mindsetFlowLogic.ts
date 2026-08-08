@@ -179,10 +179,18 @@ export function buildMindsetDownloadRedirectUrl(token: string): string {
   return url.toString();
 }
 
-export function buildMindsetDownloadDestination(token: string): string {
-  const base = process.env.MINDSET_DOWNLOAD_DESTINATION ||
-    'https://www.athletemindset.app/app';
-  const url = new URL(base);
+export function buildMindsetDownloadDestination(token: string, destinationUrl?: string): string {
+  const fallback = process.env.MINDSET_DOWNLOAD_DESTINATION ||
+    'https://athletemindset.app/app';
+  let url: URL;
+  try {
+    const candidate = new URL(destinationUrl || fallback);
+    url = candidate.protocol === 'https:' && !candidate.username && !candidate.password
+      ? candidate
+      : new URL(fallback);
+  } catch {
+    url = new URL(fallback);
+  }
   url.searchParams.set('utm_source', 'instagram');
   url.searchParams.set('utm_medium', 'dm');
   url.searchParams.set('utm_campaign', 'mindset_comment');

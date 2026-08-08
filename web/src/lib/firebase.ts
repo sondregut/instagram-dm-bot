@@ -358,6 +358,23 @@ export interface InstagramPost {
 // ============================================
 
 export type MindsetCampaignStatus = 'draft' | 'test' | 'live' | 'paused';
+export type MindsetCampaignPostMode = 'any' | 'specific' | 'next';
+export type MindsetCampaignFollowUpKey = 'noClick' | 'downloadCheck' | 'useCheck' | 'feedbackCheck';
+
+export interface MindsetCampaignFollowUp {
+  enabled: boolean;
+  delayMinutes: number;
+  message: string;
+}
+
+export interface MindsetCampaignJourney {
+  openingMessage: string;
+  openingButtonText: string;
+  linkMessage: string;
+  linkButtonText: string;
+  destinationUrl: string;
+  followUps: Record<MindsetCampaignFollowUpKey, MindsetCampaignFollowUp>;
+}
 
 export type MindsetConversationStage =
   | 'awaiting_link_request'
@@ -382,9 +399,14 @@ export interface MindsetCampaign {
   name: string;
   keyword: string;
   postIds: string[];
+  postMode: MindsetCampaignPostMode;
+  nextPostId: string | null;
+  nextPostActivatedAt: string | null;
+  nextPostResolvedAt: string | null;
   status: MindsetCampaignStatus;
   publicReplyEnabled: boolean;
   publicReplyText: string;
+  journey: MindsetCampaignJourney;
   template: 'athlete_mindset_download';
   isSystem: boolean;
   createdAt: string | null;
@@ -397,9 +419,11 @@ export interface MindsetCampaignInput {
   name: string;
   keyword: string;
   postIds: string[];
+  postMode: MindsetCampaignPostMode;
   status: MindsetCampaignStatus;
   publicReplyEnabled: boolean;
   publicReplyText: string;
+  journey: MindsetCampaignJourney;
 }
 
 export interface MindsetConversation {
