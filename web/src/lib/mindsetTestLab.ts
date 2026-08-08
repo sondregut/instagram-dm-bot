@@ -58,7 +58,7 @@ function simulateReviewQuickReply(
   switch (action) {
     case 'downloaded':
       return result(
-        'Great! The setup personalizes a short mental-rep preview before the offer. Did you make it to the preview?',
+        'Awesome, excited to hear what you think about it.',
         'awaiting_use_status'
       );
     case 'used':
@@ -298,7 +298,7 @@ export async function simulateReviewMindsetTurn(
 
   if (/\b(downloaded|installed|got it|opened it)\b/.test(message)) {
     return result(
-      'Great! The setup personalizes a short mental-rep preview before the offer. Did you make it to the preview?',
+      'Awesome, excited to hear what you think about it.',
       'awaiting_use_status'
     );
   }

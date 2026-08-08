@@ -68,7 +68,9 @@ test('does not send another link after a user says they opened the app', () => {
   assert.ok(plan);
   assert.equal(plan.nextStage, 'awaiting_use_status');
   assert.equal(plan.buttons, undefined);
+  assert.equal(plan.message, 'Awesome, excited to hear what you think about it.');
   assert.doesNotMatch(plan.message, /https?:\/\//i);
+  assert.doesNotMatch(plan.message, /\?/);
   assert.equal(plan.quickReplies, undefined);
 });
 
@@ -184,7 +186,7 @@ test('simulates the screenshot conversation without generic fallbacks', () => {
   const downloadedPlan = buildMindsetActionPlan(downloadedAction, stage, activationUrl);
   assert.ok(downloadedPlan);
   stage = downloadedPlan.nextStage;
-  assert.match(downloadedPlan.message, /mental-rep preview/i);
+  assert.equal(downloadedPlan.message, 'Awesome, excited to hear what you think about it.');
 
   const unusedAction = classifyMindsetReply('I didn’t use it');
   const unusedPlan = buildMindsetActionPlan(unusedAction, stage, activationUrl);

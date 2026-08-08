@@ -53,7 +53,7 @@ export function buildMindsetActionPlan(
   switch (action) {
     case 'downloaded':
       return {
-        message: 'Great! The setup personalizes a short mental-rep preview before the offer. Did you make it to the preview?',
+        message: 'Awesome, excited to hear what you think about it.',
         nextStage: 'awaiting_use_status',
       };
 

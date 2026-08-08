@@ -21,8 +21,11 @@ const REVIEW_MESSAGING_WINDOW_MS = 23 * 60 * 60 * 1000;
 const OLD_SUBSCRIPTION_REPLY = 'You are set. Want help getting the most value from your first week?';
 const OLD_SUBSCRIPTION_FEEDBACK_REPLY = 'Awesome \u2014 excited to hear how you like it. What made you decide to subscribe?';
 const SUBSCRIPTION_FEEDBACK_REPLY = "Awesome! Excited to hear how you like it. Let me know what you think after you've used it a bit.";
-const OLD_DOWNLOADED_REPLY = 'Great! Have you completed your first mental rep in the app yet?';
-const DOWNLOADED_REPLY = 'Great! The setup personalizes a short mental-rep preview before the offer. Did you make it to the preview?';
+const OLD_DOWNLOADED_REPLIES = [
+  'Great! Have you completed your first mental rep in the app yet?',
+  'Great! The setup personalizes a short mental-rep preview before the offer. Did you make it to the preview?',
+];
+const DOWNLOADED_REPLY = 'Awesome, excited to hear what you think about it.';
 
 export function isDashboardReviewMode(): boolean {
   return process.env.NODE_ENV === 'development'
@@ -237,7 +240,7 @@ function readReviewConversations(): MindsetConversation[] {
           ) {
             return { ...message, content: SUBSCRIPTION_FEEDBACK_REPLY };
           }
-          if (message.content === OLD_DOWNLOADED_REPLY) {
+          if (OLD_DOWNLOADED_REPLIES.includes(message.content)) {
             return { ...message, content: DOWNLOADED_REPLY };
           }
           return message;
