@@ -7,6 +7,7 @@ import {
   buildMindsetDownloadDestination,
   chooseMindsetPublicReply,
   classifyMindsetReply,
+  classifyMindsetReplyForStage,
   containsConfiguredMindsetKeyword,
   DEFAULT_TEST_KEYWORD,
   DOWNLOAD_CHECK_DELAY_MS,
@@ -17,6 +18,7 @@ import {
   isWithinMessagingWindow,
   MAX_UNANSWERED_MINDSET_FOLLOW_UPS,
   MESSAGING_WINDOW_MS,
+  mindsetAIControlAction,
   MINDSET_NO_CLICK_FOLLOW_UP_MESSAGE,
   MINDSET_PUBLIC_REPLY_VARIANTS,
   parseMindsetPublicReplyVariants,
@@ -98,8 +100,13 @@ test('classifies the activation replies that drive the state machine', () => {
   assert.equal(classifyMindsetReply("No, I didn't download it"), 'not_yet');
   assert.equal(classifyMindsetReply("Just didn't want to"), 'not_interested');
   assert.equal(classifyMindsetReply("Didn't want to"), 'not_interested');
+  assert.equal(classifyMindsetReply("I don't want the app"), 'not_interested');
+  assert.equal(classifyMindsetReply("I don't want it"), 'not_interested');
   assert.equal(classifyMindsetReply("I'm not interested"), 'not_interested');
   assert.equal(classifyMindsetReply('No thanks'), 'not_interested');
+  assert.equal(classifyMindsetReply('Stop messaging me'), 'not_interested');
+  assert.equal(classifyMindsetReply('Leave me alone'), 'not_interested');
+  assert.equal(classifyMindsetReply('Unsubscribe'), 'not_interested');
   assert.equal(classifyMindsetReply('Thanks'), 'gratitude');
   assert.equal(classifyMindsetReply('Thank you so much!'), 'gratitude');
   assert.equal(classifyMindsetReply('Thanks for your help'), 'gratitude');
@@ -118,6 +125,14 @@ test('uses Claude for natural conversation while keeping control outcomes determ
   assert.equal(shouldUseMindsetAIForReplyIntent('price_question'), false);
   assert.equal(shouldUseMindsetAIForReplyIntent('not_interested'), false);
   assert.equal(shouldUseMindsetAIForReplyIntent('human'), false);
+});
+
+test('interprets short confirmations only in an unambiguous stage', () => {
+  for (const reply of ['Yes', 'Yep', 'Yeah', 'Yes I did', 'I did', 'Sure did']) {
+    assert.equal(classifyMindsetReplyForStage(reply, 'awaiting_download_status'), 'downloaded');
+    assert.equal(classifyMindsetReplyForStage(reply, 'awaiting_use_status'), 'used');
+    assert.equal(classifyMindsetReplyForStage(reply, 'ai_follow_up'), 'other');
+  }
 });
 
 test('enforces a conservative messaging window', () => {
@@ -181,6 +196,8 @@ test('silently suppresses handoff fallback copy', () => {
   assert.equal(shouldSuppressMindsetAutomatedReply('Did you subscribe to the offer?'), true);
   assert.equal(shouldSuppressMindsetAutomatedReply('Yes, it works for athletes across sports.'), false);
   assert.equal(shouldSuppressMindsetAutomatedReply('Have you downloaded the app yet?'), false);
+  assert.equal(shouldSuppressMindsetAutomatedReply("Thanks for the feedback, I'll"), true);
+  assert.equal(shouldSuppressMindsetAutomatedReply('Here is what I would try next,'), true);
 });
 
 test('routes sensitive and account-specific requests to a human', () => {
@@ -209,11 +226,19 @@ test('feeds the canonical app journey and navigation rules to Claude', () => {
   assert.match(onboardingPrompt, /This Instagram assistant is not Aomi/i);
   assert.match(onboardingPrompt, /current Instagram conversation as a sealed conversation/i);
   assert.match(onboardingPrompt, /another Instagram user's conversation/i);
+  assert.match(onboardingPrompt, /original language/i);
+  assert.match(onboardingPrompt, /\[\[HANDOFF\]\]/);
 
   const subscribedPrompt = buildMindsetAISystemPrompt('subscribed');
   assert.match(subscribedPrompt, /app has verified the subscription/i);
   assert.match(subscribedPrompt, /Home for Today's Mental Rep/i);
   assert.match(subscribedPrompt, /never ask whether they subscribed/i);
+});
+
+test('recognizes Claude multilingual handoff controls without exposing them', () => {
+  assert.equal(mindsetAIControlAction('[[HANDOFF]]'), 'handoff');
+  assert.equal(mindsetAIControlAction(' [[ handoff ]]\nDo not send this text'), 'handoff');
+  assert.equal(mindsetAIControlAction('I can help with that.'), null);
 });
 
 test('builds an activation link with an opaque lead token and attribution', () => {

@@ -29,9 +29,14 @@ const intentCases: Array<[string, ReturnType<typeof classifyMindsetReply>]> = [
   ['No, the link is broken', 'problem'],
   ["Just didn't want to", 'not_interested'],
   ["Didn't want to", 'not_interested'],
+  ["I don't want the app", 'not_interested'],
+  ["I don't want it", 'not_interested'],
   ["I'm not interested", 'not_interested'],
   ['No thanks', 'not_interested'],
   ['I changed my mind', 'not_interested'],
+  ['Stop messaging me', 'not_interested'],
+  ['Leave me alone', 'not_interested'],
+  ['Unsubscribe', 'not_interested'],
   ['I downloaded and opened it', 'downloaded'],
   ['I used it but did not like it', 'feedback_negative'],
   ['I completed my first rep', 'used'],
@@ -172,7 +177,7 @@ test('all deterministic responses fit Instagram copy constraints', () => {
     for (const stage of stages) {
       const plan = buildMindsetActionPlan(action, stage, activationUrl);
       assert.ok(plan, `${action}/${stage}`);
-      assert.ok(plan.message.length <= 240, `${action} message is ${plan.message.length} characters`);
+      assert.ok(plan.message.length <= 200, `${action} message is ${plan.message.length} characters`);
       assert.equal(plan.quickReplies, undefined, `${action} should not send suggested replies`);
       assert.doesNotMatch(plan.message, /—/, `${action} should not use an em dash`);
       plan.buttons?.forEach((button) => {
@@ -216,8 +221,15 @@ test('simulates the screenshot conversation without generic fallbacks', () => {
 test('hard-limits AI replies without cutting a word mid-stream', () => {
   const longReply = 'This is a complete useful first sentence. '.repeat(8) + 'One final question?';
   const constrained = constrainMindsetAIReply(longReply);
-  assert.ok(constrained.length <= 240);
+  assert.ok(constrained.length <= 200);
   assert.match(constrained, /[.!?…]$/);
+
+  const longSingleSentence = constrainMindsetAIReply(
+    'Athlete Mindset helps athletes with nerves, confidence, focus, visualization, resetting after mistakes, and building a repeatable mental routine through short guided sessions that fit around training and competition.'
+  );
+  assert.ok(longSingleSentence.length <= 200);
+  assert.match(longSingleSentence, /\.$/);
+  assert.doesNotMatch(longSingleSentence, /…$/);
 
   const noEmDash = constrainMindsetAIReply('That makes sense — here is what to try next.');
   assert.doesNotMatch(noEmDash, /—/);

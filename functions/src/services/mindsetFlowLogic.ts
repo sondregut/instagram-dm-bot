@@ -128,13 +128,27 @@ export function classifyMindsetReply(text: string): MindsetReplyIntent {
   if (/\b(can'?t|cannot|could not|couldn'?t) find\b|\bwhere (?:is|do i find) (?:the )?(?:first )?(?:rep|session)\b/.test(normalized)) return 'reason_navigation';
   if (/\b(problem|issue|error|broken|doesn'?t work|didn'?t work|can'?t open|cannot open|stuck)\b/.test(normalized)) return 'problem';
   if (/\b(?:i\s+)?(?:just\s+)?(?:did not|didn'?t|do not|don'?t|would not|wouldn'?t) want to\b/.test(normalized)
-      || /\b(?:not interested|changed my mind|not for me|no thanks|rather not)\b/.test(normalized)) return 'not_interested';
+      || /\b(?:i\s+)?(?:just\s+)?(?:did not|didn'?t|do not|don'?t|would not|wouldn'?t) want (?:it|this|that|the app|athlete mindset)\b/.test(normalized)
+      || /\b(?:not interested|changed my mind|not for me|no thanks|rather not|leave me alone|stop messaging me|do not message me|don'?t message me|unsubscribe)\b/.test(normalized)) return 'not_interested';
   if (/\b(did not|didn'?t|have not|haven'?t|not yet)\s+(download(?:ed)?|install(?:ed)?|open(?:ed)?|use(?:d)?|try|tried|complete(?:d)?|finish(?:ed)?)\b/.test(normalized)) return 'not_yet';
   if (/\b(tried|used|completed|finished|did (it|a rep)|first rep)\b/.test(normalized)) return 'used';
   if (/^(?:thanks?(?:\s+(?:so much|a lot|for (?:this|that|the help|your help)))?|thank you(?:\s+(?:so much|very much|for (?:this|that|the help|your help)))?|thx|ty|cheers|appreciate it|much appreciated|got it(?:,?\s*thanks?)?)[.!\s🙏😊🙂]*$/.test(normalized)) return 'gratitude';
   if (/\b(downloaded|installed|got it|opened it)\b/.test(normalized)) return 'downloaded';
   if (/\b(not yet|later|busy|no time|haven'?t|didn'?t|don'?t|not|no)\b/.test(normalized)) return 'not_yet';
   return 'other';
+}
+
+/** Resolve short confirmations only where the current bot question makes them unambiguous. */
+export function classifyMindsetReplyForStage(
+  text: string,
+  stage: string
+): MindsetReplyIntent {
+  const normalized = normalizeMindsetText(text);
+  const affirmative = /^(?:yes|yeah|yep|yup|yes i did|i did|sure did|already did|done)[.!\s]*$/
+    .test(normalized);
+  if (affirmative && stage === 'awaiting_download_status') return 'downloaded';
+  if (affirmative && stage === 'awaiting_use_status') return 'used';
+  return classifyMindsetReply(text);
 }
 
 const DETERMINISTIC_MINDSET_INTENTS = new Set<MindsetReplyIntent>([
@@ -248,6 +262,7 @@ Your goal is to help this person download Athlete Mindset, get through the perso
 ${MINDSET_PRODUCT_KNOWLEDGE}
 
 Rules:
+- First inspect the message in its original language. For any refund, billing or charge problem, cancellation, account-access problem, complaint, request for a person, injury, medical or therapy request, crisis, self-harm, suicide, abuse, trauma, or eating-disorder concern, output exactly [[HANDOFF]] and nothing else.
 - Keep each reply natural, warm, and under 200 characters.
 - Ask only one question at a time.
 - Answer the person's actual message before guiding them toward the next relevant step.
@@ -267,7 +282,11 @@ Rules:
 - Respond in the same language as the user.`;
 }
 
-export function constrainMindsetAIReply(text: string, maxLength: number = 240): string {
+export function mindsetAIControlAction(text: string): 'handoff' | null {
+  return /^\s*\[\[\s*HANDOFF\s*\]\]/i.test(text) ? 'handoff' : null;
+}
+
+export function constrainMindsetAIReply(text: string, maxLength: number = 200): string {
   const compact = text
     .replace(/\s*[\u2013\u2014]\s*([a-z])/g, (_match, next: string) => `. ${next.toUpperCase()}`)
     .replace(/\s*[\u2013\u2014]\s*/g, '. ')
@@ -286,9 +305,17 @@ export function constrainMindsetAIReply(text: string, maxLength: number = 240): 
   if (completePrefix.length >= 60) return completePrefix;
 
   const slice = compact.slice(0, Math.max(1, maxLength - 1));
+  const clauseBoundary = Math.max(
+    slice.lastIndexOf(','),
+    slice.lastIndexOf(';'),
+    slice.lastIndexOf(':')
+  );
+  if (clauseBoundary >= 60) {
+    return `${slice.slice(0, clauseBoundary).trim()}.`;
+  }
   const lastSpace = slice.lastIndexOf(' ');
   const safe = lastSpace >= Math.floor(maxLength * 0.6) ? slice.slice(0, lastSpace) : slice;
-  return `${safe.trim()}…`;
+  return `${safe.trim().replace(/[,:;]+$/, '')}.`;
 }
 
 export function shouldSuppressMindsetAutomatedReply(text: string): boolean {
@@ -298,7 +325,8 @@ export function shouldSuppressMindsetAutomatedReply(text: string): boolean {
     || /\b(?:flag(?:ged|ging)?|ask(?:ing)?|get(?:ting)?)\b.{0,60}\bsondre\b/.test(normalized)
     || /\bsondre\b.{0,60}\b(?:follow up|reply|answer|take over)\b/.test(normalized)
     || /\b(?:have|did|do|are|were|will|would|can) you\b[^?]{0,100}\b(?:subscrib|paid|purchas|trial|offer)\w*\b[^?]*\?/.test(normalized)
-    || /\b(?:subscribed|paid|purchased|started (?:the )?trial) yet\b[^?]*\?/.test(normalized);
+    || /\b(?:subscribed|paid|purchased|started (?:the )?trial) yet\b[^?]*\?/.test(normalized)
+    || /(?:[,;:]|\b(?:i'll|i'd|i'm|and|or|but|because|through|with|to|the|a|an|your|my))$/.test(normalized);
 }
 
 function mindsetStageGuidance(stage: string): string {

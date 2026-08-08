@@ -6,8 +6,9 @@ import {
 } from './mindsetConversationEngine';
 import {
   buildMindsetAISystemPrompt,
-  classifyMindsetReply,
+  classifyMindsetReplyForStage,
   constrainMindsetAIReply,
+  mindsetAIControlAction,
   requiresMindsetHumanHandoff,
   shouldUseMindsetAIForReplyIntent,
   shouldSuppressMindsetAutomatedReply,
@@ -48,7 +49,7 @@ export async function simulateMindsetTurn(
     : null;
   const classifiedAction = requiresMindsetHumanHandoff(userMessage)
     ? 'human'
-    : classifyMindsetReply(userMessage);
+    : classifyMindsetReplyForStage(userMessage, stage);
   const action = quickReplyAction || classifiedAction;
   if (quickReplyAction || !shouldUseMindsetAIForReplyIntent(classifiedAction)) {
     const plan = buildMindsetActionPlan(action, stage, activationUrl);
@@ -70,8 +71,12 @@ export async function simulateMindsetTurn(
       userMessage
     )
     : { text: '', usedAI: false };
+  const aiRequestedHandoff = aiResult.usedAI
+    && mindsetAIControlAction(aiResult.text) === 'handoff';
   const reply = constrainMindsetAIReply(aiResult.text);
-  const createsHandoff = !aiResult.usedAI || shouldSuppressMindsetAutomatedReply(reply);
+  const createsHandoff = !aiResult.usedAI
+    || aiRequestedHandoff
+    || shouldSuppressMindsetAutomatedReply(reply);
 
   return {
     reply: createsHandoff ? '' : reply,

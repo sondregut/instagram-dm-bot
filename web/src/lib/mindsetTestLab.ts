@@ -157,6 +157,15 @@ export async function simulateReviewMindsetTurn(
   if (!message) throw new Error('Enter a test message.');
   const isQuestion = message.endsWith('?');
 
+  const affirmative = /^(?:yes|yeah|yep|yup|yes i did|i did|sure did|already did|done)[.!\s]*$/
+    .test(message);
+  if (affirmative && input.stage === 'awaiting_download_status') {
+    return result('Awesome, excited to hear what you think about it.', 'awaiting_use_status');
+  }
+  if (affirmative && input.stage === 'awaiting_use_status') {
+    return result('Nice! How did that first mental rep feel?', 'awaiting_feedback');
+  }
+
   const quickReplyAction = input.quickReplyPayload?.startsWith('mindset:')
     ? input.quickReplyPayload.split(':')[1]
     : null;
@@ -245,7 +254,8 @@ export async function simulateReviewMindsetTurn(
   }
 
   if (/\b(?:i\s+)?(?:just\s+)?(?:did not|didn't|do not|don't|would not|wouldn't) want to\b/.test(message)
-      || /\b(?:not interested|changed my mind|not for me|no thanks|rather not)\b/.test(message)) {
+      || /\b(?:i\s+)?(?:just\s+)?(?:did not|didn't|do not|don't|would not|wouldn't) want (?:it|this|that|the app|athlete mindset)\b/.test(message)
+      || /\b(?:not interested|changed my mind|not for me|no thanks|rather not|leave me alone|stop messaging me|do not message me|don't message me|unsubscribe)\b/.test(message)) {
     return result('No worries, thanks for letting me know.', 'completed');
   }
 

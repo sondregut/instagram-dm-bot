@@ -6,6 +6,8 @@
   "scripts": {
     "build": "tsc",
     "test": "npm run build && node --test lib/services/*.test.js lib/utils/*.test.js",
+    "test:mindset:emulator": "npm run build && firebase --config ../firebase.json --project instagram-dm-bot-app emulators:exec --only firestore \"node --test integration/mindsetEndToEnd.emulator.test.js\"",
+    "verify:mindset:claude": "npm run build && node scripts/verifyMindsetClaude.js",
     "build:watch": "tsc --watch",
     "serve": "npm run build && firebase emulators:start --only functions",
     "shell": "npm run build && firebase functions:shell",

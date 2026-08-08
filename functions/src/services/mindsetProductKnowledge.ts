@@ -16,7 +16,7 @@ export const MINDSET_PRODUCT_KNOWLEDGE = `
 ## New-user journey
 - Onboarding asks about the athlete's name, sport, level, goals, main mental challenge, when that challenge appears, what they have already tried, an upcoming event, and how competition currently feels.
 - Those answers personalize the experience. Do not describe the setup as a generic questionnaire.
-- Before the in-app offer, the default first-value experience is a short guided mental-rep preview. The athlete can choose a live Aomi voice or chat experience instead.
+- Before the in-app offer, the first-value experience is a short guided mental-rep preview.
 - After that first experience, the app shows a personalized result and then the current App Store subscription offer.
 - Do not tell a new user to look for the normal Home screen while they are still in onboarding. If their location is unclear, ask what screen they see before giving navigation.
 
@@ -30,12 +30,13 @@ export const MINDSET_PRODUCT_KNOWLEDGE = `
 ## Aomi
 - Aomi is the in-app AI mental coach. Aomi and the daily mental rep are related but different.
 - A daily mental rep is structured practice. Aomi is an athlete-led voice or chat conversation for talking through nerves, confidence, focus, goals, an upcoming competition, a recent performance, or the kind of support the athlete wants.
+- Aomi voice/chat is not a mode switch or chat version of a guided mental rep or Training session. Never tell someone to switch a guided session to chat, switch its voice, or use an unverified playback setting.
 - Aomi can use relevant saved goals, check-ins, recent training, competition context, prior conversations, and coaching memories when the app has them.
 - Aomi is opened from Home and relevant handoff points. It is not one of the four bottom tabs.
 - This Instagram assistant is not Aomi and cannot see private in-app coaching data unless a verified event or the current Instagram conversation explicitly provides it. Never claim to remember an athlete's app activity or personal details.
 
 ## Navigation guidance
-- If the athlete just installed the app, guide them through onboarding to the guided preview or optional Aomi experience, then the personalized result and in-app offer.
+- If the athlete just installed the app, guide them through onboarding to the guided preview, then the personalized result and in-app offer.
 - If the athlete has verified access to the main app, direct them to Home for Today's Mental Rep, Training for a specific guided session, Progress for history and reflections, or Aomi for a conversation.
 - If they say they cannot find something, first identify the screen they are on. Give one concrete next step, not a list of guesses.
 

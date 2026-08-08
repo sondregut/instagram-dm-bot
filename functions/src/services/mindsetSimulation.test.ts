@@ -175,6 +175,28 @@ test('responds naturally when the person only says thanks', async () => {
   }
 });
 
+test('uses the approved replies for stage-aware yes answers', async () => {
+  const downloaded = await simulateMindsetTurn(
+    'awaiting_download_status',
+    'Yes',
+    activationUrl,
+    [],
+    async () => { throw new Error('Claude should not be called for an unambiguous yes'); }
+  );
+  assert.equal(downloaded.reply, 'Awesome, excited to hear what you think about it.');
+  assert.equal(downloaded.nextStage, 'awaiting_use_status');
+
+  const used = await simulateMindsetTurn(
+    'awaiting_use_status',
+    'Yep',
+    activationUrl,
+    [],
+    async () => { throw new Error('Claude should not be called for an unambiguous yes'); }
+  );
+  assert.equal(used.reply, 'Nice! How did that first mental rep feel?');
+  assert.equal(used.nextStage, 'awaiting_feedback');
+});
+
 test('silently hands off provider fallbacks and forbidden handoff copy', async () => {
   const unavailable = await simulateMindsetTurn(
     'ai_follow_up',
@@ -184,6 +206,17 @@ test('silently hands off provider fallbacks and forbidden handoff copy', async (
   assert.equal(unavailable.reply, '');
   assert.equal(unavailable.nextStage, 'human_handoff');
   assert.equal(unavailable.createsHandoff, true);
+
+  const multilingualSensitive = await simulateMindsetTurn(
+    'ai_follow_up',
+    'Jeg ble belastet to ganger og vil ha refusjon.',
+    activationUrl,
+    [],
+    async () => ({ text: '[[HANDOFF]]', usedAI: true })
+  );
+  assert.equal(multilingualSensitive.reply, '');
+  assert.equal(multilingualSensitive.nextStage, 'human_handoff');
+  assert.equal(multilingualSensitive.createsHandoff, true);
 
   const forbiddenCopy = await simulateMindsetTurn(
     'ai_follow_up',

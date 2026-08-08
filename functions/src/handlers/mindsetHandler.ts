@@ -17,11 +17,12 @@ import {
   buildMindsetDownloadDestination,
   buildMindsetDownloadRedirectUrl,
   chooseMindsetPublicReply,
-  classifyMindsetReply,
+  classifyMindsetReplyForStage,
   constrainMindsetAIReply,
   hasMindsetFollowUpCapacity,
   isWithinMessagingWindow,
   MAX_UNANSWERED_MINDSET_FOLLOW_UPS,
+  mindsetAIControlAction,
   requiresMindsetHumanHandoff,
   shouldUseMindsetAIForReplyIntent,
   shouldSuppressMindsetAutomatedReply,
@@ -565,7 +566,7 @@ export async function handleMindsetMessage(
     await profileRefreshPromise;
     return true;
   }
-  const intent = classifyMindsetReply(text);
+  const intent = classifyMindsetReplyForStage(text, lead.stage);
   const isNewPaidConfirmation = intent === 'subscribed'
     && !['subscription_claimed', 'subscribed'].includes(lead.stage);
   const isSafeTerminalAcknowledgement = intent === 'gratitude' || intent === 'not_interested';
@@ -593,11 +594,17 @@ export async function handleMindsetMessage(
     buildMindsetAISystemPrompt(lead.stage),
     [...history, { role: 'user', content: text }],
     {
-      maxTokens: 120,
+      maxTokens: 300,
       userMessage: text,
       fallbackResponse: '',
     }
   );
+  if (aiResult.usedAI && mindsetAIControlAction(aiResult.text) === 'handoff') {
+    console.log('[Mindset] Claude requested a silent sensitive-message handoff');
+    await createSilentMindsetHandoff(ref, lead, 'ai_sensitive_handoff');
+    await profileRefreshPromise;
+    return true;
+  }
   const responseText = constrainMindsetAIReply(aiResult.text);
   if (!aiResult.usedAI || shouldSuppressMindsetAutomatedReply(responseText)) {
     console.log('[Mindset] Free-text response suppressed; creating silent handoff');

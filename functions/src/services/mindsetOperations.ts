@@ -691,7 +691,7 @@ export const simulateMindsetConversationApi = functions.https.onCall(async (data
     history,
     async (systemPrompt, conversationHistory, userMessage) =>
       generateIsolatedAIResponseWithStatus(systemPrompt, conversationHistory, {
-        maxTokens: 120,
+        maxTokens: 300,
         userMessage,
         fallbackResponse: '',
       }),
