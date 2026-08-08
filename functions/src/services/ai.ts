@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { SecretManagerServiceClient } from '@google-cloud/secret-manager';
 import { InstagramAccount, KnowledgeBase } from '../firebase';
 import { getKnowledgeBaseForAccount, buildKnowledgeContext } from './knowledge';
+import { extractAnthropicText } from './anthropicResponse';
 
 let anthropic: Anthropic | null = null;
 let apiKey: string | null = null;
@@ -119,12 +120,11 @@ export async function generateAIResponseWithStatus(
       })),
     });
 
-    const aiMessage = response.content[0]?.type === 'text'
-      ? response.content[0].text
-      : null;
+    const aiMessage = extractAnthropicText(response.content);
 
     if (!aiMessage) {
-      console.error('[AI] Claude returned an empty response');
+      const blockTypes = response.content.map((block) => block.type).join(',') || 'none';
+      console.error(`[AI] Claude returned no text blocks (types: ${blockTypes}; stop: ${response.stop_reason || 'unknown'})`);
       return { text: fallbackResponse, usedAI: false };
     }
 
@@ -203,7 +203,7 @@ Only output valid JSON, nothing else.`;
       ],
     });
 
-    const content = response.content[0]?.type === 'text' ? response.content[0].text : '{}';
+    const content = extractAnthropicText(response.content) || '{}';
     const result = JSON.parse(content);
     return {
       intent: result.intent || 'other',
@@ -243,7 +243,7 @@ Do not use excessive emojis.`;
       ],
     });
 
-    const content = response.content[0]?.type === 'text' ? response.content[0].text : null;
+    const content = extractAnthropicText(response.content);
     return content || `Hey ${username}! Thanks for following!`;
   } catch (error) {
     console.error('Welcome message generation error:', error);

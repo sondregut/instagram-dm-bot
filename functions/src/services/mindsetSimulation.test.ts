@@ -61,6 +61,39 @@ test('can exercise the adaptive reply path through an injected provider', async 
   assert.deepEqual(result.quickReplies, []);
 });
 
+test('uses Claude for a natural blocker but closes a clear decline deterministically', async () => {
+  let aiCalls = 0;
+  const provider = async () => {
+    aiCalls++;
+    return {
+      text: 'No worries. Was there anything specific that put you off?',
+      usedAI: true,
+    };
+  };
+  const blocker = await simulateMindsetTurn(
+    'awaiting_download_status',
+    'No, I did not',
+    activationUrl,
+    [],
+    provider
+  );
+  assert.equal(aiCalls, 1);
+  assert.equal(blocker.reply, 'No worries. Was there anything specific that put you off?');
+  assert.equal(blocker.nextStage, 'ai_follow_up');
+
+  const decline = await simulateMindsetTurn(
+    'ai_follow_up',
+    "Just didn't want to",
+    activationUrl,
+    [],
+    provider
+  );
+  assert.equal(aiCalls, 1);
+  assert.equal(decline.reply, 'No worries, thanks for letting me know.');
+  assert.equal(decline.nextStage, 'completed');
+  assert.equal(decline.createsHandoff, false);
+});
+
 test('passes verified product knowledge into adaptive product-question turns', async () => {
   const questions = [
     'How does the app work?',

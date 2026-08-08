@@ -128,6 +128,8 @@ function simulateReviewQuickReply(
           { title: "Not sure it's for me", payload: 'mindset:reason_unsure' },
         ] }
       );
+    case 'not_interested':
+      return result('No worries, thanks for letting me know.', 'completed');
     case 'problem':
       return result('I can help. What happened when you tried the link or opened the app?', 'ai_follow_up');
     case 'reason_navigation':
@@ -240,6 +242,11 @@ export async function simulateReviewMindsetTurn(
       'I can help. What happened when you tried the link or opened the app?',
       'ai_follow_up'
     );
+  }
+
+  if (/\b(?:i\s+)?(?:just\s+)?(?:did not|didn't|do not|don't|would not|wouldn't) want to\b/.test(message)
+      || /\b(?:not interested|changed my mind|not for me|no thanks|rather not)\b/.test(message)) {
+    return result('No worries, thanks for letting me know.', 'completed');
   }
 
   const notYet = /\b(did not|didn't|have not|haven't|not yet|later|busy|no time|no)\b/.test(message);

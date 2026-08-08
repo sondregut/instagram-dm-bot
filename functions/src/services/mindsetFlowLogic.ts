@@ -25,6 +25,7 @@ export type MindsetReplyIntent =
   | 'feedback_unsure'
   | 'feedback_negative'
   | 'reason_navigation'
+  | 'not_interested'
   | 'not_yet'
   | 'problem'
   | 'gratitude'
@@ -126,12 +127,32 @@ export function classifyMindsetReply(text: string): MindsetReplyIntent {
   if (/\b(?:not sure|hard to tell|too early to tell|need more time to tell)\b/.test(normalized)) return 'feedback_unsure';
   if (/\b(can'?t|cannot|could not|couldn'?t) find\b|\bwhere (?:is|do i find) (?:the )?(?:first )?(?:rep|session)\b/.test(normalized)) return 'reason_navigation';
   if (/\b(problem|issue|error|broken|doesn'?t work|didn'?t work|can'?t open|cannot open|stuck)\b/.test(normalized)) return 'problem';
+  if (/\b(?:i\s+)?(?:just\s+)?(?:did not|didn'?t|do not|don'?t|would not|wouldn'?t) want to\b/.test(normalized)
+      || /\b(?:not interested|changed my mind|not for me|no thanks|rather not)\b/.test(normalized)) return 'not_interested';
   if (/\b(did not|didn'?t|have not|haven'?t|not yet)\s+(download(?:ed)?|install(?:ed)?|open(?:ed)?|use(?:d)?|try|tried|complete(?:d)?|finish(?:ed)?)\b/.test(normalized)) return 'not_yet';
   if (/\b(tried|used|completed|finished|did (it|a rep)|first rep)\b/.test(normalized)) return 'used';
   if (/^(?:thanks?(?:\s+(?:so much|a lot|for (?:this|that|the help|your help)))?|thank you(?:\s+(?:so much|very much|for (?:this|that|the help|your help)))?|thx|ty|cheers|appreciate it|much appreciated|got it(?:,?\s*thanks?)?)[.!\s🙏😊🙂]*$/.test(normalized)) return 'gratitude';
   if (/\b(downloaded|installed|got it|opened it)\b/.test(normalized)) return 'downloaded';
   if (/\b(not yet|later|busy|no time|haven'?t|didn'?t|don'?t|not|no)\b/.test(normalized)) return 'not_yet';
   return 'other';
+}
+
+const DETERMINISTIC_MINDSET_INTENTS = new Set<MindsetReplyIntent>([
+  'downloaded',
+  'used',
+  'trial_started',
+  'subscribed',
+  'price_objection',
+  'price_question',
+  'feedback_positive',
+  'not_interested',
+  'gratitude',
+  'human',
+]);
+
+/** Keep control and safety outcomes deterministic; let Claude handle natural conversation. */
+export function shouldUseMindsetAIForReplyIntent(intent: MindsetReplyIntent): boolean {
+  return !DETERMINISTIC_MINDSET_INTENTS.has(intent);
 }
 
 export function normalizeMindsetText(text: string): string {
@@ -232,6 +253,8 @@ Rules:
 - Answer the person's actual message before guiding them toward the next relevant step.
 - If they only thank you or acknowledge the message, respond warmly without asking a question, troubleshooting, or pushing another step.
 - If their message is unrelated, respond briefly and naturally, then use one soft question to return to the current stage. Never repeat a CTA mechanically.
+- Never repeat a question that the person already answered in the recent conversation.
+- If they clearly say they do not want the app, are not interested, or changed their mind, acknowledge it once without a question and end the sales conversation.
 - Never ask whether they subscribed, paid, started a trial, or decided to start the offer. Those milestones are tracked through verified app events.
 - Do not use em dashes.
 - Never pretend to be Sondre. If asked, say you are his automated assistant.

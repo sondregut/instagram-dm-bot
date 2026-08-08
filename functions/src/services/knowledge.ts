@@ -4,6 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { SecretManagerServiceClient } from '@google-cloud/secret-manager';
 import { db, storage, KnowledgeBase, KnowledgeDocument, KnowledgeFAQ, KnowledgeWebsite } from '../firebase';
 import { generateToken } from '../utils/encryption';
+import { extractAnthropicText } from './anthropicResponse';
 
 // Anthropic client initialization
 let anthropic: Anthropic | null = null;
@@ -535,7 +536,7 @@ ${websiteContent}`;
       ],
     });
 
-    const content = response.content[0]?.type === 'text' ? response.content[0].text : null;
+    const content = extractAnthropicText(response.content);
     if (!content) {
       throw new functions.https.HttpsError('internal', 'Failed to generate personality');
     }

@@ -21,6 +21,7 @@ import {
   MINDSET_PUBLIC_REPLY_VARIANTS,
   parseMindsetPublicReplyVariants,
   requiresMindsetHumanHandoff,
+  shouldUseMindsetAIForReplyIntent,
   shouldSuppressMindsetAutomatedReply,
   TEST_DOWNLOAD_CHECK_DELAY_MS,
   validateMindsetTestConfiguration,
@@ -95,12 +96,28 @@ test('classifies the activation replies that drive the state machine', () => {
   assert.equal(classifyMindsetReply("Haven't had time yet"), 'not_yet');
   assert.equal(classifyMindsetReply("I didn't use it"), 'not_yet');
   assert.equal(classifyMindsetReply("No, I didn't download it"), 'not_yet');
+  assert.equal(classifyMindsetReply("Just didn't want to"), 'not_interested');
+  assert.equal(classifyMindsetReply("Didn't want to"), 'not_interested');
+  assert.equal(classifyMindsetReply("I'm not interested"), 'not_interested');
+  assert.equal(classifyMindsetReply('No thanks'), 'not_interested');
   assert.equal(classifyMindsetReply('Thanks'), 'gratitude');
   assert.equal(classifyMindsetReply('Thank you so much!'), 'gratitude');
   assert.equal(classifyMindsetReply('Thanks for your help'), 'gratitude');
   assert.equal(classifyMindsetReply('Got it, thanks'), 'gratitude');
   assert.equal(classifyMindsetReply('I got it'), 'downloaded');
   assert.equal(classifyMindsetReply('Can I talk to Sondre?'), 'human');
+});
+
+test('uses Claude for natural conversation while keeping control outcomes deterministic', () => {
+  assert.equal(shouldUseMindsetAIForReplyIntent('not_yet'), true);
+  assert.equal(shouldUseMindsetAIForReplyIntent('problem'), true);
+  assert.equal(shouldUseMindsetAIForReplyIntent('feedback_negative'), true);
+  assert.equal(shouldUseMindsetAIForReplyIntent('other'), true);
+  assert.equal(shouldUseMindsetAIForReplyIntent('downloaded'), false);
+  assert.equal(shouldUseMindsetAIForReplyIntent('subscribed'), false);
+  assert.equal(shouldUseMindsetAIForReplyIntent('price_question'), false);
+  assert.equal(shouldUseMindsetAIForReplyIntent('not_interested'), false);
+  assert.equal(shouldUseMindsetAIForReplyIntent('human'), false);
 });
 
 test('enforces a conservative messaging window', () => {
@@ -187,6 +204,8 @@ test('feeds the canonical app journey and navigation rules to Claude', () => {
   assert.match(onboardingPrompt, /personalized result and then the current App Store subscription offer/i);
   assert.match(onboardingPrompt, /ask what they see before giving one navigation step/i);
   assert.match(onboardingPrompt, /only thank you or acknowledge/i);
+  assert.match(onboardingPrompt, /Never repeat a question/i);
+  assert.match(onboardingPrompt, /do not want the app/i);
   assert.match(onboardingPrompt, /This Instagram assistant is not Aomi/i);
   assert.match(onboardingPrompt, /current Instagram conversation as a sealed conversation/i);
   assert.match(onboardingPrompt, /another Instagram user's conversation/i);

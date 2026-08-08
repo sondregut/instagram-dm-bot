@@ -23,6 +23,7 @@ import {
   isWithinMessagingWindow,
   MAX_UNANSWERED_MINDSET_FOLLOW_UPS,
   requiresMindsetHumanHandoff,
+  shouldUseMindsetAIForReplyIntent,
   shouldSuppressMindsetAutomatedReply,
 } from '../services/mindsetFlowLogic';
 import {
@@ -567,8 +568,8 @@ export async function handleMindsetMessage(
   const intent = classifyMindsetReply(text);
   const isNewPaidConfirmation = intent === 'subscribed'
     && !['subscription_claimed', 'subscribed'].includes(lead.stage);
-  const isSafeTerminalAcknowledgement = intent === 'gratitude';
-  if (intent !== 'other'
+  const isSafeTerminalAcknowledgement = intent === 'gratitude' || intent === 'not_interested';
+  if (!shouldUseMindsetAIForReplyIntent(intent)
       && (![
         'trial_claimed',
         'subscription_claimed',

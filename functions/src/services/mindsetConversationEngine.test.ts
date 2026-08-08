@@ -27,6 +27,11 @@ const intentCases: Array<[string, ReturnType<typeof classifyMindsetReply>]> = [
   ["I can't find the first rep", 'reason_navigation'],
   ['The link is broken', 'problem'],
   ['No, the link is broken', 'problem'],
+  ["Just didn't want to", 'not_interested'],
+  ["Didn't want to", 'not_interested'],
+  ["I'm not interested", 'not_interested'],
+  ['No thanks', 'not_interested'],
+  ['I changed my mind', 'not_interested'],
   ['I downloaded and opened it', 'downloaded'],
   ['I used it but did not like it', 'feedback_negative'],
   ['I completed my first rep', 'used'],
@@ -84,6 +89,14 @@ test('responds to not using the app according to the current stage', () => {
   assert.ok(downloadPlan);
   assert.match(downloadPlan.message, /downloading or opening/i);
   assert.equal(downloadPlan.quickReplies, undefined);
+});
+
+test('acknowledges a clear decline once and completes the funnel', () => {
+  const plan = buildMindsetActionPlan('not_interested', 'ai_follow_up', activationUrl);
+  assert.ok(plan);
+  assert.equal(plan.message, 'No worries, thanks for letting me know.');
+  assert.equal(plan.nextStage, 'completed');
+  assert.doesNotMatch(plan.message, /\?|download|open|try/i);
 });
 
 test('handles price replies without irrelevant download buttons', () => {
@@ -145,7 +158,7 @@ test('all deterministic responses fit Instagram copy constraints', () => {
     'downloaded', 'used', 'rep_not_yet', 'feedback_positive', 'feedback_unsure',
     'feedback_negative', 'offer_not_started', 'offer_question', 'objection_price',
     'price_objection', 'price_question', 'trial_claimed', 'trial_started', 'subscribed',
-    'onboarding_help', 'complete', 'not_yet', 'problem', 'reason_navigation',
+    'onboarding_help', 'complete', 'not_yet', 'not_interested', 'problem', 'reason_navigation',
     'reason_link', 'reason_unsure', 'reason_no_time', 'human',
     'gratitude',
   ];

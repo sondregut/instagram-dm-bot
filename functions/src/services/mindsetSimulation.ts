@@ -9,6 +9,7 @@ import {
   classifyMindsetReply,
   constrainMindsetAIReply,
   requiresMindsetHumanHandoff,
+  shouldUseMindsetAIForReplyIntent,
   shouldSuppressMindsetAutomatedReply,
 } from './mindsetFlowLogic';
 
@@ -45,10 +46,11 @@ export async function simulateMindsetTurn(
   const quickReplyAction = quickReplyPayload?.startsWith('mindset:')
     ? quickReplyPayload.split(':')[1]
     : null;
-  const action = quickReplyAction || (requiresMindsetHumanHandoff(userMessage)
+  const classifiedAction = requiresMindsetHumanHandoff(userMessage)
     ? 'human'
-    : classifyMindsetReply(userMessage));
-  if (action !== 'other') {
+    : classifyMindsetReply(userMessage);
+  const action = quickReplyAction || classifiedAction;
+  if (quickReplyAction || !shouldUseMindsetAIForReplyIntent(classifiedAction)) {
     const plan = buildMindsetActionPlan(action, stage, activationUrl);
     if (plan) {
       return {

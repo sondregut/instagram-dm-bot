@@ -140,6 +140,12 @@ export function buildMindsetActionPlan(
         nextStage: 'ai_follow_up',
       };
 
+    case 'not_interested':
+      return {
+        message: 'No worries, thanks for letting me know.',
+        nextStage: 'completed',
+      };
+
     case 'problem':
       return {
         message: 'I can help. What happened when you tried the link or opened the app?',
