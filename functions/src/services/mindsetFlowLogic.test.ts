@@ -15,11 +15,13 @@ import {
   getMindsetMilestoneFollowUpDelayMs,
   getMindsetNoClickFollowUpMessage,
   hasMindsetFollowUpCapacity,
+  isMindsetAppLinkRequest,
   isWithinMessagingWindow,
   MAX_UNANSWERED_MINDSET_FOLLOW_UPS,
   MESSAGING_WINDOW_MS,
   mindsetAIControlAction,
   MINDSET_NO_CLICK_FOLLOW_UP_MESSAGE,
+  MINDSET_DIRECT_APP_URL,
   MINDSET_PUBLIC_REPLY_VARIANTS,
   parseMindsetPublicReplyVariants,
   requiresMindsetHumanHandoff,
@@ -82,6 +84,9 @@ test('test mode allows sondre_pv but blocks the live Manychat keyword', () => {
 });
 
 test('classifies the activation replies that drive the state machine', () => {
+  assert.equal(classifyMindsetReply('Send it again'), 'app_link_request');
+  assert.equal(classifyMindsetReply('Can you send me the app link?'), 'app_link_request');
+  assert.equal(classifyMindsetReply('Where is the download link?'), 'app_link_request');
   assert.equal(classifyMindsetReply('Yes, I downloaded it'), 'downloaded');
   assert.equal(classifyMindsetReply('I tried my first rep'), 'used');
   assert.equal(classifyMindsetReply('I started the trial'), 'trial_started');
@@ -105,6 +110,7 @@ test('classifies the activation replies that drive the state machine', () => {
   assert.equal(classifyMindsetReply("I'm not interested"), 'not_interested');
   assert.equal(classifyMindsetReply('No thanks'), 'not_interested');
   assert.equal(classifyMindsetReply('Stop messaging me'), 'not_interested');
+  assert.equal(classifyMindsetReply("Don't send it again"), 'not_interested');
   assert.equal(classifyMindsetReply('Leave me alone'), 'not_interested');
   assert.equal(classifyMindsetReply('Unsubscribe'), 'not_interested');
   assert.equal(classifyMindsetReply('Thanks'), 'gratitude');
@@ -115,12 +121,27 @@ test('classifies the activation replies that drive the state machine', () => {
   assert.equal(classifyMindsetReply('Can I talk to Sondre?'), 'human');
 });
 
+test('recognizes app-link requests without overriding opt-outs', () => {
+  for (const message of [
+    'Send it again',
+    'Please resend the link',
+    'Can I get the app link?',
+    'link please',
+    'I need the download link again',
+  ]) {
+    assert.equal(isMindsetAppLinkRequest(message), true, message);
+  }
+  assert.equal(isMindsetAppLinkRequest("Don't send it again"), false);
+  assert.equal(MINDSET_DIRECT_APP_URL, 'https://www.athletemindset.app/app');
+});
+
 test('uses Claude for natural conversation while keeping control outcomes deterministic', () => {
   assert.equal(shouldUseMindsetAIForReplyIntent('not_yet'), true);
   assert.equal(shouldUseMindsetAIForReplyIntent('problem'), true);
   assert.equal(shouldUseMindsetAIForReplyIntent('feedback_negative'), true);
   assert.equal(shouldUseMindsetAIForReplyIntent('other'), true);
   assert.equal(shouldUseMindsetAIForReplyIntent('downloaded'), false);
+  assert.equal(shouldUseMindsetAIForReplyIntent('app_link_request'), false);
   assert.equal(shouldUseMindsetAIForReplyIntent('subscribed'), false);
   assert.equal(shouldUseMindsetAIForReplyIntent('price_question'), false);
   assert.equal(shouldUseMindsetAIForReplyIntent('not_interested'), false);
@@ -228,6 +249,8 @@ test('feeds the canonical app journey and navigation rules to Claude', () => {
   assert.match(onboardingPrompt, /another Instagram user's conversation/i);
   assert.match(onboardingPrompt, /original language/i);
   assert.match(onboardingPrompt, /\[\[HANDOFF\]\]/);
+  assert.match(onboardingPrompt, /\[\[SEND_APP_LINK\]\]/);
+  assert.match(onboardingPrompt, /never claim a link was sent/i);
 
   const subscribedPrompt = buildMindsetAISystemPrompt('subscribed');
   assert.match(subscribedPrompt, /app has verified the subscription/i);
@@ -238,6 +261,12 @@ test('feeds the canonical app journey and navigation rules to Claude', () => {
 test('recognizes Claude multilingual handoff controls without exposing them', () => {
   assert.equal(mindsetAIControlAction('[[HANDOFF]]'), 'handoff');
   assert.equal(mindsetAIControlAction(' [[ handoff ]]\nDo not send this text'), 'handoff');
+  assert.equal(mindsetAIControlAction('[[SEND_APP_LINK]]'), 'send_app_link');
+  assert.equal(mindsetAIControlAction(' [[ send_app_link ]]\nDo not send this text'), 'send_app_link');
+  assert.equal(
+    mindsetAIControlAction("Sure! Here it is: [Download App] Let me know once you've got it opened."),
+    'send_app_link'
+  );
   assert.equal(mindsetAIControlAction('I can help with that.'), null);
 });
 

@@ -11,6 +11,7 @@ function result(
 ): MindsetTestTurnResult {
   return {
     reply,
+    additionalReplies: [],
     nextStage,
     quickReplies: [],
     buttons: options.buttons || [],
@@ -164,6 +165,14 @@ export async function simulateReviewMindsetTurn(
   }
   if (affirmative && input.stage === 'awaiting_use_status') {
     return result('Nice! How did that first mental rep feel?', 'awaiting_feedback');
+  }
+
+  if (/\b(?:send|share|drop|give)(?:\s+(?:me\s+)?)?(?:it|that|(?:the\s+)?(?:app\s+|download\s+)?link|(?:the\s+)?app)(?:\s+(?:over\s+)?again)?\b/.test(message)
+      || /\b(?:resend|re-send)(?:\s+(?:me\s+)?)?(?:it|that|the\s+(?:app\s+|download\s+)?link)?\b/.test(message)) {
+    return {
+      ...result('here you go', input.stage),
+      additionalReplies: ['https://www.athletemindset.app/app'],
+    };
   }
 
   const quickReplyAction = input.quickReplyPayload?.startsWith('mindset:')

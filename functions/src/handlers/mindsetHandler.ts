@@ -453,7 +453,7 @@ async function handleMindsetAction(
   }
 
   if (CLOSED_FUNNEL_STAGES.has(lead.stage)
-      && !['onboarding_help', 'complete', 'human', 'subscribed', 'gratitude'].includes(action)) {
+      && !['app_link_request', 'onboarding_help', 'complete', 'human', 'subscribed', 'gratitude'].includes(action)) {
     console.log(`[Mindset] Ignoring stale funnel action in ${lead.stage}`);
     return;
   }
@@ -469,11 +469,6 @@ async function handleMindsetAction(
       return;
     }
 
-    const sent = plan.buttons
-        ? await sendInstagramButtonDM(senderId, plan.message, plan.buttons, account)
-        : await sendInstagramDM(senderId, plan.message, account, { conversationId: ref.id });
-    if (!sent) throw new Error(`Mindset action ${action} failed to send`);
-
     const updates: Record<string, unknown> = {
       stage: plan.nextStage,
       lastUserInteractionAt: now,
@@ -481,7 +476,25 @@ async function handleMindsetAction(
     if (plan.feedbackReason) updates.feedbackReason = plan.feedbackReason;
     if (action === 'trial_claimed' || action === 'trial_started') updates.claimedTrialStartedAt = now;
     if (action === 'subscribed') updates.claimedSubscribedAt = now;
-    await updateLeadHistory(ref, 'assistant', plan.message, updates);
+
+    if (plan.buttons) {
+      const sent = await sendInstagramButtonDM(senderId, plan.message, plan.buttons, account);
+      if (!sent) throw new Error(`Mindset action ${action} failed to send`);
+      await updateLeadHistory(ref, 'assistant', plan.message, updates);
+    } else {
+      const messages = [plan.message, ...(plan.additionalMessages || [])].filter(Boolean);
+      for (let index = 0; index < messages.length; index++) {
+        const message = messages[index];
+        const sent = await sendInstagramDM(senderId, message, account, { conversationId: ref.id });
+        if (!sent) throw new Error(`Mindset action ${action} message ${index + 1} failed to send`);
+        await updateLeadHistory(
+          ref,
+          'assistant',
+          message,
+          index === messages.length - 1 ? updates : {}
+        );
+      }
+    }
 
     if (action === 'trial_claimed' || action === 'trial_started' || action === 'subscribed') {
       await cancelPendingFollowUps(lead.id, `manual_${action}`);
@@ -599,9 +612,16 @@ export async function handleMindsetMessage(
       fallbackResponse: '',
     }
   );
-  if (aiResult.usedAI && mindsetAIControlAction(aiResult.text) === 'handoff') {
+  const aiControlAction = aiResult.usedAI ? mindsetAIControlAction(aiResult.text) : null;
+  if (aiControlAction === 'handoff') {
     console.log('[Mindset] Claude requested a silent sensitive-message handoff');
     await createSilentMindsetHandoff(ref, lead, 'ai_sensitive_handoff');
+    await profileRefreshPromise;
+    return true;
+  }
+  if (aiControlAction === 'send_app_link') {
+    console.log('[Mindset] Claude requested the deterministic app-link action');
+    await handleMindsetAction('app_link_request', senderId, lead, ref, account);
     await profileRefreshPromise;
     return true;
   }

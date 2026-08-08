@@ -534,6 +534,7 @@ export interface MindsetTestTurnInput {
 
 export interface MindsetTestTurnResult {
   reply: string;
+  additionalReplies?: string[];
   nextStage: MindsetConversationStage;
   quickReplies: Array<{ title: string; payload: string }>;
   buttons: Array<{ title: string; url: string }>;

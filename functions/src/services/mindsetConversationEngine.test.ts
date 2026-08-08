@@ -13,6 +13,15 @@ import {
 
 const activationUrl = 'https://example.com/mindset-open?token=test';
 
+test('sends a requested app link as its own real message', () => {
+  const plan = buildMindsetActionPlan('app_link_request', 'ai_follow_up', activationUrl);
+  assert.ok(plan);
+  assert.equal(plan.message, 'here you go');
+  assert.deepEqual(plan.additionalMessages, ['https://www.athletemindset.app/app']);
+  assert.equal(plan.nextStage, 'ai_follow_up');
+  assert.equal(plan.buttons, undefined);
+});
+
 const intentCases: Array<[string, ReturnType<typeof classifyMindsetReply>]> = [
   ["I didn't use it", 'not_yet'],
   ['I didn’t use it', 'not_yet'],
@@ -166,6 +175,7 @@ test('all deterministic responses fit Instagram copy constraints', () => {
     'onboarding_help', 'complete', 'not_yet', 'not_interested', 'problem', 'reason_navigation',
     'reason_link', 'reason_unsure', 'reason_no_time', 'human',
     'gratitude',
+    'app_link_request',
   ];
   const stages: MindsetStage[] = [
     'awaiting_download_status',

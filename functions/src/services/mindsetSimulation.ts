@@ -21,6 +21,7 @@ export interface MindsetSimulationMessage {
 
 export interface MindsetSimulationResult {
   reply: string;
+  additionalReplies: string[];
   nextStage: MindsetStage;
   quickReplies: MindsetQuickReply[];
   buttons: MindsetButton[];
@@ -56,6 +57,7 @@ export async function simulateMindsetTurn(
     if (plan) {
       return {
         reply: plan.message,
+        additionalReplies: plan.additionalMessages || [],
         nextStage: plan.nextStage,
         quickReplies: plan.quickReplies || [],
         buttons: plan.buttons || [],
@@ -73,6 +75,20 @@ export async function simulateMindsetTurn(
     : { text: '', usedAI: false };
   const aiRequestedHandoff = aiResult.usedAI
     && mindsetAIControlAction(aiResult.text) === 'handoff';
+  const aiRequestedAppLink = aiResult.usedAI
+    && mindsetAIControlAction(aiResult.text) === 'send_app_link';
+  if (aiRequestedAppLink) {
+    const plan = buildMindsetActionPlan('app_link_request', stage, activationUrl);
+    if (!plan) throw new Error('App-link action is unavailable');
+    return {
+      reply: plan.message,
+      additionalReplies: plan.additionalMessages || [],
+      nextStage: plan.nextStage,
+      quickReplies: plan.quickReplies || [],
+      buttons: plan.buttons || [],
+      createsHandoff: false,
+    };
+  }
   const reply = constrainMindsetAIReply(aiResult.text);
   const createsHandoff = !aiResult.usedAI
     || aiRequestedHandoff
@@ -80,6 +96,7 @@ export async function simulateMindsetTurn(
 
   return {
     reply: createsHandoff ? '' : reply,
+    additionalReplies: [],
     nextStage: createsHandoff ? 'human_handoff' : 'ai_follow_up',
     quickReplies: [],
     buttons: [],

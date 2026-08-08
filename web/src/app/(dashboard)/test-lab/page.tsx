@@ -46,6 +46,7 @@ const scenarios = [
   { label: 'Price objection', message: 'I like it, but it is too expensive for me.' },
   { label: 'Already paid', message: 'I already paid and subscribed.' },
   { label: 'Link problem', message: 'The download link does not work.' },
+  { label: 'Send link again', message: 'Send it again' },
   { label: 'Did not use it', message: "I downloaded it, but I didn't use it yet." },
   { label: 'Different topic', message: 'Does this work for pole vaulters too?' },
   { label: 'Refund request', message: 'I was charged twice and need a refund.' },
@@ -68,9 +69,9 @@ export default function TestLabPage() {
       setTranscript((current) => [
         ...current,
         { role: 'user', content: turn.message },
-        ...(result.reply.trim()
-          ? [{ role: 'assistant' as const, content: result.reply }]
-          : []),
+        ...[result.reply, ...(result.additionalReplies || [])]
+          .filter((reply) => reply.trim())
+          .map((reply) => ({ role: 'assistant' as const, content: reply })),
       ]);
       setStage(result.nextStage);
       setLastResult(result);

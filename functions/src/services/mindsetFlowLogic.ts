@@ -6,6 +6,7 @@ export const TEST_DOWNLOAD_CHECK_DELAY_MS = 2 * 60 * 1000;
 export const DOWNLOAD_CHECK_DELAY_MS = 30 * 60 * 1000;
 export const MAX_UNANSWERED_MINDSET_FOLLOW_UPS = 2;
 export const MINDSET_NO_CLICK_FOLLOW_UP_MESSAGE = 'Hey! Did you get a chance to check out Athlete Mindset yet? Would love to hear what you think.';
+export const MINDSET_DIRECT_APP_URL = 'https://www.athletemindset.app/app';
 
 export type MindsetMilestoneFollowUp = 'use_check' | 'feedback_check';
 
@@ -15,6 +16,7 @@ const MILESTONE_FOLLOW_UP_DELAYS_MS: Record<MindsetMilestoneFollowUp, number> = 
 };
 
 export type MindsetReplyIntent =
+  | 'app_link_request'
   | 'downloaded'
   | 'used'
   | 'trial_started'
@@ -126,10 +128,11 @@ export function classifyMindsetReply(text: string): MindsetReplyIntent {
   if (/\b(?:it )?(?:helped|was helpful|was useful|felt good)|\b(?:liked|loved) it\b/.test(normalized)) return 'feedback_positive';
   if (/\b(?:not sure|hard to tell|too early to tell|need more time to tell)\b/.test(normalized)) return 'feedback_unsure';
   if (/\b(can'?t|cannot|could not|couldn'?t) find\b|\bwhere (?:is|do i find) (?:the )?(?:first )?(?:rep|session)\b/.test(normalized)) return 'reason_navigation';
+  if (isMindsetAppLinkRequest(normalized)) return 'app_link_request';
   if (/\b(problem|issue|error|broken|doesn'?t work|didn'?t work|can'?t open|cannot open|stuck)\b/.test(normalized)) return 'problem';
   if (/\b(?:i\s+)?(?:just\s+)?(?:did not|didn'?t|do not|don'?t|would not|wouldn'?t) want to\b/.test(normalized)
       || /\b(?:i\s+)?(?:just\s+)?(?:did not|didn'?t|do not|don'?t|would not|wouldn'?t) want (?:it|this|that|the app|athlete mindset)\b/.test(normalized)
-      || /\b(?:not interested|changed my mind|not for me|no thanks|rather not|leave me alone|stop messaging me|do not message me|don'?t message me|unsubscribe)\b/.test(normalized)) return 'not_interested';
+      || /\b(?:not interested|changed my mind|not for me|no thanks|rather not|leave me alone|stop messaging me|stop sending|do not message me|don'?t message me|do not send|don'?t send|never send|unsubscribe)\b/.test(normalized)) return 'not_interested';
   if (/\b(did not|didn'?t|have not|haven'?t|not yet)\s+(download(?:ed)?|install(?:ed)?|open(?:ed)?|use(?:d)?|try|tried|complete(?:d)?|finish(?:ed)?)\b/.test(normalized)) return 'not_yet';
   if (/\b(tried|used|completed|finished|did (it|a rep)|first rep)\b/.test(normalized)) return 'used';
   if (/^(?:thanks?(?:\s+(?:so much|a lot|for (?:this|that|the help|your help)))?|thank you(?:\s+(?:so much|very much|for (?:this|that|the help|your help)))?|thx|ty|cheers|appreciate it|much appreciated|got it(?:,?\s*thanks?)?)[.!\s🙏😊🙂]*$/.test(normalized)) return 'gratitude';
@@ -152,6 +155,7 @@ export function classifyMindsetReplyForStage(
 }
 
 const DETERMINISTIC_MINDSET_INTENTS = new Set<MindsetReplyIntent>([
+  'app_link_request',
   'downloaded',
   'used',
   'trial_started',
@@ -176,6 +180,20 @@ export function normalizeMindsetText(text: string): string {
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
+}
+
+export function isMindsetAppLinkRequest(text: string): boolean {
+  const normalized = normalizeMindsetText(text);
+  if (/\b(?:do not|don't|never|stop)\b.{0,24}\b(?:send|share|resend|re-send)\b/.test(normalized)) {
+    return false;
+  }
+
+  return /\b(?:send|share|drop|give)(?:\s+(?:me\s+)?)?(?:it|that|(?:the\s+)?(?:app\s+|download\s+)?link|(?:the\s+)?app)(?:\s+(?:over\s+)?again)?\b/.test(normalized)
+    || /\b(?:resend|re-send)(?:\s+(?:me\s+)?)?(?:it|that|the\s+(?:app\s+|download\s+)?link|(?:the\s+)?app)?\b/.test(normalized)
+    || /\b(?:can|could)\s+i\s+(?:get|have)\s+(?:the\s+)?(?:app\s+|download\s+)?link\b/.test(normalized)
+    || /\b(?:what|where)(?:'s| is)\s+(?:the\s+)?(?:app\s+|download\s+)?link\b/.test(normalized)
+    || /\b(?:need|want)\s+(?:the\s+)?(?:app\s+|download\s+)?link(?:\s+again)?\b/.test(normalized)
+    || /^(?:the\s+)?(?:app\s+|download\s+)?link(?:\s+(?:again|please))?[.!?]*$/.test(normalized);
 }
 
 export function requiresMindsetHumanHandoff(text: string): boolean {
@@ -263,6 +281,7 @@ ${MINDSET_PRODUCT_KNOWLEDGE}
 
 Rules:
 - First inspect the message in its original language. For any refund, billing or charge problem, cancellation, account-access problem, complaint, request for a person, injury, medical or therapy request, crisis, self-harm, suicide, abuse, trauma, or eating-disorder concern, output exactly [[HANDOFF]] and nothing else.
+- If the person asks for the app link, asks for it again, or asks you to resend it, output exactly [[SEND_APP_LINK]] and nothing else. The runtime will send the real link in a separate message.
 - Keep each reply natural, warm, and under 200 characters.
 - Ask only one question at a time.
 - Answer the person's actual message before guiding them toward the next relevant step.
@@ -278,12 +297,16 @@ Rules:
 - If the person says they already subscribed or started a trial, stop selling and help them get value from the app.
 - Do not pressure or shame the person.
 - Refunds, account access, safety concerns, complaints, and requests for a person are silently routed to Sondre before the model is called.
+- Never write a fake button label such as [Download App] and never claim a link was sent. Use [[SEND_APP_LINK]] so the runtime sends the real URL.
 - Do not send any URL except one supplied in the conversation context.
 - Respond in the same language as the user.`;
 }
 
-export function mindsetAIControlAction(text: string): 'handoff' | null {
-  return /^\s*\[\[\s*HANDOFF\s*\]\]/i.test(text) ? 'handoff' : null;
+export function mindsetAIControlAction(text: string): 'handoff' | 'send_app_link' | null {
+  if (/^\s*\[\[\s*HANDOFF\s*\]\]/i.test(text)) return 'handoff';
+  if (/^\s*\[\[\s*SEND_APP_LINK\s*\]\]/i.test(text)) return 'send_app_link';
+  if (/\[\s*Download App\s*\]/i.test(text)) return 'send_app_link';
+  return null;
 }
 
 export function constrainMindsetAIReply(text: string, maxLength: number = 200): string {

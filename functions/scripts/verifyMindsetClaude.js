@@ -26,6 +26,7 @@ function validateCommon(result) {
   assert.equal(shouldSuppressMindsetAutomatedReply(result.reply), false, 'reply violated a suppression rule');
   assert.deepEqual(result.quickReplies, [], 'reply exposed suggested replies');
   assert.deepEqual(result.buttons, [], 'free-text reply exposed a button');
+  assert.ok(Array.isArray(result.additionalReplies), 'additional replies were not returned as an array');
 }
 
 const scenarios = [
@@ -147,6 +148,26 @@ const scenarios = [
     validate: (result) => assert.equal(result.reply, 'Awesome, excited to hear what you think about it.'),
   },
   {
+    name: 'explicit app-link resend control',
+    stage: 'ai_follow_up',
+    message: 'Send it again',
+    source: 'deterministic',
+    validate: (result) => {
+      assert.equal(result.reply, 'here you go');
+      assert.deepEqual(result.additionalReplies, ['https://www.athletemindset.app/app']);
+    },
+  },
+  {
+    name: 'Norwegian app-link resend control',
+    stage: 'ai_follow_up',
+    message: 'Kan du sende meg lenken en gang til?',
+    source: 'claude_link',
+    validate: (result) => {
+      assert.equal(result.reply, 'here you go');
+      assert.deepEqual(result.additionalReplies, ['https://www.athletemindset.app/app']);
+    },
+  },
+  {
     name: 'clear opt-out control',
     stage: 'ai_follow_up',
     message: "I don't want the app",
@@ -193,6 +214,9 @@ const scenarios = [
       assert.equal(callsUsed, 0, `${scenario.name}: English sensitive message reached Claude`);
       assert.equal(result.createsHandoff, true, `${scenario.name}: did not create a handoff`);
       assert.equal(result.reply, '', `${scenario.name}: sent an automated reply`);
+    } else if (scenario.source === 'claude_link') {
+      assert.equal(callsUsed, 1, `${scenario.name}: Claude was not called exactly once`);
+      assert.equal(result.createsHandoff, false, `${scenario.name}: unexpectedly created a handoff`);
     } else {
       assert.equal(callsUsed, 1, `${scenario.name}: Claude did not classify the multilingual message`);
       assert.equal(result.createsHandoff, true, `${scenario.name}: did not create a handoff`);

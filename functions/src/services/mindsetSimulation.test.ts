@@ -4,6 +4,50 @@ import { simulateMindsetTurn } from './mindsetSimulation';
 
 const activationUrl = 'https://example.com/open-athlete-mindset';
 
+test('simulates an app-link resend as two separate messages without Claude', async () => {
+  const result = await simulateMindsetTurn(
+    'ai_follow_up',
+    'Send it again',
+    activationUrl,
+    [],
+    async () => { throw new Error('Claude should not be called for an explicit link request'); }
+  );
+  assert.equal(result.reply, 'here you go');
+  assert.deepEqual(result.additionalReplies, ['https://www.athletemindset.app/app']);
+  assert.equal(result.nextStage, 'ai_follow_up');
+  assert.deepEqual(result.buttons, []);
+});
+
+test('turns Claude link controls into the same real two-message action', async () => {
+  const result = await simulateMindsetTurn(
+    'awaiting_download_status',
+    'Could you drop that thing I need to install it?',
+    activationUrl,
+    [],
+    async () => ({ text: '[[SEND_APP_LINK]]', usedAI: true })
+  );
+  assert.equal(result.reply, 'here you go');
+  assert.deepEqual(result.additionalReplies, ['https://www.athletemindset.app/app']);
+  assert.equal(result.nextStage, 'awaiting_download_status');
+  assert.equal(result.createsHandoff, false);
+});
+
+test('replaces Claude download-button placeholders with the real two-message action', async () => {
+  const result = await simulateMindsetTurn(
+    'ai_follow_up',
+    'Could you share that with me?',
+    activationUrl,
+    [],
+    async () => ({
+      text: "Sure! Here it is: [Download App] Let me know once you've got it opened.",
+      usedAI: true,
+    })
+  );
+  assert.equal(result.reply, 'here you go');
+  assert.deepEqual(result.additionalReplies, ['https://www.athletemindset.app/app']);
+  assert.doesNotMatch(result.reply, /\[Download App\]/i);
+});
+
 test('simulates deterministic conversion replies without sending or writing anything', async () => {
   const price = await simulateMindsetTurn(
     'awaiting_subscription_status',

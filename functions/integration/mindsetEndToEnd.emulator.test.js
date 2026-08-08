@@ -291,6 +291,43 @@ test('runs the protected comment, DM, tracking, AI, isolation, and follow-up jou
   assert.equal(outbound.at(-1).message, 'Awesome, excited to hear what you think about it.');
   assert.equal((await yesLead.ref.get()).data().stage, 'awaiting_use_status');
 
+  const userResend = 'ig-user-resend';
+  await handleMindsetComment(comment('comment-resend', userResend), account);
+  const resendLead = await leadFor(userResend);
+  await resendLead.ref.set({ stage: 'ai_follow_up' }, { merge: true });
+  const resendBefore = outbound.length;
+  const aiBeforeResend = aiRequests.length;
+  await handleMindsetMessage(message(userResend, 'Send it again'), account);
+  assert.deepEqual(
+    outbound.slice(resendBefore).map((item) => ({
+      kind: item.kind,
+      message: item.message,
+      recipientId: item.recipientId,
+      conversationId: item.conversationId,
+    })),
+    [
+      {
+        kind: 'dm',
+        message: 'here you go',
+        recipientId: userResend,
+        conversationId: resendLead.id,
+      },
+      {
+        kind: 'dm',
+        message: 'https://www.athletemindset.app/app',
+        recipientId: userResend,
+        conversationId: resendLead.id,
+      },
+    ]
+  );
+  assert.equal(aiRequests.length, aiBeforeResend, 'explicit resend unexpectedly called Claude');
+  const resendAfter = await resendLead.ref.get();
+  assert.equal(resendAfter.data().stage, 'ai_follow_up');
+  assert.deepEqual(
+    resendAfter.data().history.slice(-2).map((entry) => entry.content),
+    ['here you go', 'https://www.athletemindset.app/app']
+  );
+
   const wrongRecipientBefore = outbound.length;
   assert.equal(await handleMindsetMessage(
     message(userThree, 'This should be blocked', 'another-account'),

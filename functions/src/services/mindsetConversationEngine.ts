@@ -1,3 +1,5 @@
+import { MINDSET_DIRECT_APP_URL } from './mindsetFlowLogic';
+
 export type MindsetStage =
   | 'awaiting_link_request'
   | 'link_sent'
@@ -29,6 +31,7 @@ export interface MindsetButton {
 export interface MindsetActionPlan {
   message: string;
   nextStage: MindsetStage;
+  additionalMessages?: string[];
   quickReplies?: MindsetQuickReply[];
   buttons?: MindsetButton[];
   feedbackReason?: string;
@@ -51,6 +54,13 @@ export function buildMindsetActionPlan(
   _activationUrl: string
 ): MindsetActionPlan | null {
   switch (action) {
+    case 'app_link_request':
+      return {
+        message: 'here you go',
+        additionalMessages: [MINDSET_DIRECT_APP_URL],
+        nextStage: stage === 'awaiting_link_request' ? 'link_sent' : stage,
+      };
+
     case 'downloaded':
       return {
         message: 'Awesome, excited to hear what you think about it.',
