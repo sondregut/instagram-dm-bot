@@ -12,6 +12,10 @@ test('normalizes legacy campaigns to the complete default journey', () => {
     normalizeMindsetCampaignJourney(undefined),
     DEFAULT_MINDSET_CAMPAIGN_JOURNEY
   );
+  assert.equal(
+    DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps.useCheck.message,
+    'hi, just curious what you think of the app so far if you’ve had a chance to try it yet'
+  );
 });
 
 test('preserves editable message, link, and follow-up settings', () => {

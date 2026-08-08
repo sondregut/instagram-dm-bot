@@ -24,7 +24,7 @@ export const DEFAULT_MINDSET_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
     useCheck: {
       enabled: true,
       delayMinutes: 45,
-      message: 'Did you get a chance to try your first mental rep?',
+      message: 'hi, just curious what you think of the app so far if you’ve had a chance to try it yet',
     },
     feedbackCheck: {
       enabled: true,
