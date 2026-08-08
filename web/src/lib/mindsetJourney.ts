@@ -5,7 +5,7 @@ import type {
 } from './firebase';
 
 export const DEFAULT_MINDSET_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
-  openingMessage: 'Here is the Athlete Mindset app. Tap below and I will send you the download link.',
+  openingMessage: 'Click below to get the link to download Athlete Mindset!\n\nAppreciate you,\nSondre',
   openingButtonText: 'Send me the link',
   linkMessage: 'Download Athlete Mindset here:',
   linkButtonText: 'Download App',

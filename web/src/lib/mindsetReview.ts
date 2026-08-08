@@ -103,7 +103,7 @@ function initialReviewConversations(): MindsetConversation[] {
       feedbackReason: 'Price',
       history: [
         { role: 'user', content: '[Comment] AMDMTEST8472', at: minutesAgo(68) },
-        { role: 'assistant', content: 'Click below to get the link to download Athlete Mindset! Appreciate you, Sondre', at: minutesAgo(67) },
+        { role: 'assistant', content: 'Click below to get the link to download Athlete Mindset!\n\nAppreciate you,\nSondre', at: minutesAgo(67) },
         { role: 'assistant', content: 'Click here: [Download App]', at: minutesAgo(65) },
         { role: 'assistant', content: 'Quick check, did you manage to download and open Athlete Mindset?', at: minutesAgo(60) },
         { role: 'user', content: 'Yes, opened it', at: minutesAgo(56) },
@@ -142,7 +142,7 @@ function initialReviewConversations(): MindsetConversation[] {
       feedbackReason: null,
       history: [
         { role: 'user', content: '[Comment] AMDMTEST8472', at: minutesAgo(44) },
-        { role: 'assistant', content: 'Click below to get the link to download Athlete Mindset! Appreciate you, Sondre', at: minutesAgo(43) },
+        { role: 'assistant', content: 'Click below to get the link to download Athlete Mindset!\n\nAppreciate you,\nSondre', at: minutesAgo(43) },
         { role: 'user', content: 'I was charged and need to talk to a person', at: minutesAgo(7) },
       ],
       milestones: emptyMilestones(),
