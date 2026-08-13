@@ -5,7 +5,7 @@ import type {
 } from './firebase';
 
 export const DEFAULT_MINDSET_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
-  openingMessage: 'Click below to get the link to download Athlete Mindset!\n\nAppreciate you,\nSondre',
+  openingMessage: "Click below to get the link to download Athlete Mindset!\n\nIf you don't see the button, just reply link\n\nAppreciate you,\nSondre",
   openingButtonText: 'Send me the link',
   linkMessage: 'here you go! hope you like it',
   linkButtonText: 'Download App',
@@ -34,6 +34,10 @@ export const DEFAULT_MINDSET_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
   },
 };
 
+const LEGACY_OPENING_MESSAGES = new Set([
+  'Click below to get the link to download Athlete Mindset!\n\nAppreciate you,\nSondre',
+]);
+
 const LEGACY_LINK_MESSAGES = new Set([
   'Download Athlete Mindset here:',
   'Download Athlete Mindset here',
@@ -52,6 +56,13 @@ export const MINDSET_FOLLOW_UP_KEYS: MindsetCampaignFollowUpKey[] = [
 
 function textValue(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.trim() ? value : fallback;
+}
+
+function openingMessageValue(value: unknown): string {
+  const message = textValue(value, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.openingMessage).trim();
+  return LEGACY_OPENING_MESSAGES.has(message)
+    ? DEFAULT_MINDSET_CAMPAIGN_JOURNEY.openingMessage
+    : message;
 }
 
 function linkMessageValue(value: unknown): string {
@@ -81,7 +92,7 @@ function followUpValue(
 export function normalizeMindsetCampaignJourney(value?: Partial<MindsetCampaignJourney> | null): MindsetCampaignJourney {
   const followUps = value?.followUps || {} as MindsetCampaignJourney['followUps'];
   return {
-    openingMessage: textValue(value?.openingMessage, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.openingMessage),
+    openingMessage: openingMessageValue(value?.openingMessage),
     openingButtonText: textValue(value?.openingButtonText, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.openingButtonText),
     linkMessage: linkMessageValue(value?.linkMessage),
     linkButtonText: textValue(value?.linkButtonText, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.linkButtonText),

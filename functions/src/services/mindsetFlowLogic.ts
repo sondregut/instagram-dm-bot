@@ -172,6 +172,9 @@ export function classifyMindsetReplyForStage(
   const normalized = normalizeMindsetText(text);
   const affirmative = /^(?:yes|yeah|yep|yup|yes i did|i did|sure did|already did|done)[.!\s]*$/
     .test(normalized);
+  const linkConfirmation = /^(?:yes|yes please|yeah|yep|yup|sure|please|ok|okay|send it|send me the link)[.!\s]*$/
+    .test(normalized);
+  if (linkConfirmation && stage === 'awaiting_link_request') return 'app_link_request';
   if (affirmative && stage === 'awaiting_download_status') return 'downloaded';
   if (affirmative && stage === 'awaiting_use_status') return 'used';
   if (stage === 'awaiting_feedback'
@@ -200,6 +203,9 @@ export function precheckMindsetAutomationScope(
 ): MindsetScopePrecheck {
   if (intent === 'human' || requiresMindsetHumanHandoff(text)) return 'human_required';
   if (isExplicitMindsetOptOut(text)) return 'in_scope';
+  if (intent === 'app_link_request' && stage === 'awaiting_link_request') {
+    return 'in_scope';
+  }
   if (!conversationIsRecent) return 'classify';
   if (intent === 'gratitude') return 'in_scope';
   if ([
@@ -217,7 +223,6 @@ export function precheckMindsetAutomationScope(
       && (stage === 'awaiting_download_status' || stage === 'awaiting_use_status')) {
     return 'in_scope';
   }
-
   return 'classify';
 }
 

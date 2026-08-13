@@ -24,6 +24,13 @@ test('normalizes legacy campaigns to the complete default journey', () => {
     DEFAULT_MINDSET_CAMPAIGN_JOURNEY.linkMessage,
     'here you go! hope you like it'
   );
+  assert.match(DEFAULT_MINDSET_CAMPAIGN_JOURNEY.openingMessage, /reply link/i);
+  assert.equal(
+    normalizeMindsetCampaignJourney({
+      openingMessage: 'Click below to get the link to download Athlete Mindset!\n\nAppreciate you,\nSondre',
+    }).openingMessage,
+    DEFAULT_MINDSET_CAMPAIGN_JOURNEY.openingMessage
+  );
   assert.equal(
     normalizeMindsetCampaignJourney({ linkMessage: 'Download Athlete Mindset here:' }).linkMessage,
     'here you go! hope you like it'

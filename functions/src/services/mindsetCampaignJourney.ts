@@ -22,7 +22,7 @@ export interface MindsetCampaignJourney {
 }
 
 export const DEFAULT_MINDSET_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
-  openingMessage: 'Click below to get the link to download Athlete Mindset!\n\nAppreciate you,\nSondre',
+  openingMessage: "Click below to get the link to download Athlete Mindset!\n\nIf you don't see the button, just reply link\n\nAppreciate you,\nSondre",
   openingButtonText: 'Send me the link',
   linkMessage: 'here you go! hope you like it',
   linkButtonText: 'Download App',
@@ -51,6 +51,10 @@ export const DEFAULT_MINDSET_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
   },
 };
 
+const LEGACY_OPENING_MESSAGES = new Set([
+  'Click below to get the link to download Athlete Mindset!\n\nAppreciate you,\nSondre',
+]);
+
 const LEGACY_LINK_MESSAGES = new Set([
   'Download Athlete Mindset here:',
   'Download Athlete Mindset here',
@@ -69,6 +73,13 @@ const FOLLOW_UP_KEYS: MindsetCampaignFollowUpKey[] = [
 
 function textValue(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+}
+
+function openingMessageValue(value: unknown): string {
+  const message = textValue(value, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.openingMessage);
+  return LEGACY_OPENING_MESSAGES.has(message)
+    ? DEFAULT_MINDSET_CAMPAIGN_JOURNEY.openingMessage
+    : message;
 }
 
 function linkMessageValue(value: unknown): string {
@@ -115,7 +126,7 @@ export function normalizeMindsetCampaignJourney(value: unknown): MindsetCampaign
   }
 
   return {
-    openingMessage: textValue(input.openingMessage, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.openingMessage),
+    openingMessage: openingMessageValue(input.openingMessage),
     openingButtonText: textValue(input.openingButtonText, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.openingButtonText),
     linkMessage: linkMessageValue(input.linkMessage),
     linkButtonText: textValue(input.linkButtonText, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.linkButtonText),

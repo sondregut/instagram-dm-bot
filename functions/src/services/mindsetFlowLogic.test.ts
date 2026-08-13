@@ -247,6 +247,21 @@ test('interprets short confirmations only in an unambiguous stage', () => {
   }
 });
 
+test('treats a typed reply as the missing opening button only while awaiting the link request', () => {
+  for (const reply of ['Yes', 'Yes please', 'Sure', 'Okay', 'Send it']) {
+    assert.equal(classifyMindsetReplyForStage(reply, 'awaiting_link_request'), 'app_link_request');
+    assert.equal(
+      precheckMindsetAutomationScope('app_link_request', reply, 'awaiting_link_request', true),
+      'in_scope'
+    );
+    assert.equal(
+      precheckMindsetAutomationScope('app_link_request', reply, 'awaiting_link_request', false),
+      'in_scope'
+    );
+  }
+  assert.equal(classifyMindsetReplyForStage('Yes', 'ai_follow_up'), 'other');
+});
+
 test('enforces a conservative messaging window', () => {
   const now = 1_000_000_000;
   assert.equal(isWithinMessagingWindow(now - MESSAGING_WINDOW_MS + 1, now), true);

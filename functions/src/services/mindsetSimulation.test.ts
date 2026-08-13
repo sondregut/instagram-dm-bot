@@ -255,6 +255,17 @@ test('responds naturally when the person only says thanks', async () => {
 });
 
 test('uses the approved replies for stage-aware yes answers', async () => {
+  const missingButtonFallback = await simulateMindsetTurn(
+    'awaiting_link_request',
+    'Yes',
+    activationUrl,
+    [],
+    async () => { throw new Error('Claude should not be called for the missing-button fallback'); }
+  );
+  assert.equal(missingButtonFallback.reply, 'here you go! hope you like it');
+  assert.deepEqual(missingButtonFallback.additionalReplies, ['https://athletemindset.app/app']);
+  assert.equal(missingButtonFallback.nextStage, 'link_sent');
+
   const downloaded = await simulateMindsetTurn(
     'awaiting_download_status',
     'Yes',

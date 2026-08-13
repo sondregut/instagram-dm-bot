@@ -234,6 +234,18 @@ test('runs the protected comment, DM, tracking, AI, isolation, and follow-up jou
   assert.equal(await handleMindsetComment(firstComment, account), true);
   assert.equal(outbound.length, sentBeforeDuplicate, 'duplicate comment sent messages twice');
 
+  const missingButtonUser = 'ig-missing-button';
+  await handleMindsetComment(comment('comment-missing-button', missingButtonUser), account);
+  const missingButtonBefore = outbound.length;
+  const aiBeforeMissingButton = aiRequests.length;
+  await handleMindsetMessage(message(missingButtonUser, 'Yes'), account);
+  assert.deepEqual(
+    outbound.slice(missingButtonBefore).map((item) => item.message),
+    ['here you go! hope you like it', 'https://athletemindset.app/app']
+  );
+  assert.equal(aiRequests.length, aiBeforeMissingButton, 'missing-button fallback unexpectedly called Claude');
+  assert.equal((await leadFor(missingButtonUser)).data.stage, 'link_sent');
+
   const initialLinkBefore = outbound.length;
   assert.equal(await handleMindsetMessage(
     quickReply(userOne, `mindset:send_link:${leadOne.data.linkToken}`),
