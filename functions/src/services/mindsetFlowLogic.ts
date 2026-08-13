@@ -164,6 +164,14 @@ export function classifyMindsetReply(text: string): MindsetReplyIntent {
   return 'other';
 }
 
+const MINDSET_LINK_CONFIRMATION_PATTERN = /^(?:link|the link|app link|download link|yes|yes please|yeah|yep|yup|sure|please|ok|okay|send it|send me the link)[.!\s]*$/;
+const MINDSET_MISSING_LINK_DELIVERY_PATTERN = /^(?:(?:i\s+)?(?:did not|didn't|didnt|never)\s+(?:get|got|receive|received)\s+(?:it|that|the link|a link)|(?:it|the link)\s+(?:did not|didn't|didnt|never)\s+(?:arrive|come through|show up)|nothing\s+(?:arrived|came through|showed up))[.!\s]*$/;
+
+function isDeterministicMindsetLinkReply(normalizedText: string): boolean {
+  return MINDSET_LINK_CONFIRMATION_PATTERN.test(normalizedText)
+    || MINDSET_MISSING_LINK_DELIVERY_PATTERN.test(normalizedText);
+}
+
 /** Resolve short confirmations only where the current bot question makes them unambiguous. */
 export function classifyMindsetReplyForStage(
   text: string,
@@ -172,9 +180,10 @@ export function classifyMindsetReplyForStage(
   const normalized = normalizeMindsetText(text);
   const affirmative = /^(?:yes|yeah|yep|yup|yes i did|i did|sure did|already did|done)[.!\s]*$/
     .test(normalized);
-  const linkConfirmation = /^(?:yes|yes please|yeah|yep|yup|sure|please|ok|okay|send it|send me the link)[.!\s]*$/
-    .test(normalized);
-  if (linkConfirmation && stage === 'awaiting_link_request') return 'app_link_request';
+  if (isDeterministicMindsetLinkReply(normalized)
+      && (stage === 'awaiting_link_request' || stage === 'link_sent')) {
+    return 'app_link_request';
+  }
   if (affirmative && stage === 'awaiting_download_status') return 'downloaded';
   if (affirmative && stage === 'awaiting_use_status') return 'used';
   if (stage === 'awaiting_feedback'
@@ -203,7 +212,10 @@ export function precheckMindsetAutomationScope(
 ): MindsetScopePrecheck {
   if (intent === 'human' || requiresMindsetHumanHandoff(text)) return 'human_required';
   if (isExplicitMindsetOptOut(text)) return 'in_scope';
-  if (intent === 'app_link_request' && stage === 'awaiting_link_request') {
+  const normalized = normalizeMindsetText(text);
+  if (intent === 'app_link_request'
+      && isDeterministicMindsetLinkReply(normalized)
+      && (stage === 'awaiting_link_request' || stage === 'link_sent')) {
     return 'in_scope';
   }
   if (!conversationIsRecent) return 'classify';
@@ -216,7 +228,6 @@ export function precheckMindsetAutomationScope(
     'feedback_positive',
   ].includes(intent)) return 'in_scope';
 
-  const normalized = normalizeMindsetText(text);
   const shortAffirmative = /^(?:yes|yeah|yep|yup|yes i did|i did|sure did|already did|done)[.!\s]*$/
     .test(normalized);
   if (shortAffirmative

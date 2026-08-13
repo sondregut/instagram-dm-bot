@@ -238,7 +238,7 @@ test('runs the protected comment, DM, tracking, AI, isolation, and follow-up jou
   await handleMindsetComment(comment('comment-missing-button', missingButtonUser), account);
   const missingButtonBefore = outbound.length;
   const aiBeforeMissingButton = aiRequests.length;
-  await handleMindsetMessage(message(missingButtonUser, 'Yes'), account);
+  await handleMindsetMessage(message(missingButtonUser, 'link'), account);
   assert.deepEqual(
     outbound.slice(missingButtonBefore).map((item) => item.message),
     ['here you go! hope you like it', 'https://athletemindset.app/app']
@@ -276,6 +276,16 @@ test('runs the protected comment, DM, tracking, AI, isolation, and follow-up jou
 
   leadOne = await leadFor(userOne);
   assert.equal(leadOne.data.stage, 'link_sent');
+  const missingDeliveryBefore = outbound.length;
+  const aiBeforeMissingDelivery = aiRequests.length;
+  await handleMindsetMessage(message(userOne, "i didn't get it"), account);
+  assert.deepEqual(
+    outbound.slice(missingDeliveryBefore).map((item) => item.message),
+    ['here you go! hope you like it', 'https://athletemindset.app/app']
+  );
+  assert.equal(aiRequests.length, aiBeforeMissingDelivery, 'failed link delivery unexpectedly called Claude');
+  assert.equal((await leadFor(userOne)).data.stage, 'link_sent');
+
   let linkReminder = await db.collection('mindset_followups')
     .doc(followUpId(leadOne.id, 'link_reminder')).get();
   assert.equal(linkReminder.data().status, 'pending');

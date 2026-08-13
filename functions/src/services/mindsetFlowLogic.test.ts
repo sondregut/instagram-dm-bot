@@ -248,7 +248,7 @@ test('interprets short confirmations only in an unambiguous stage', () => {
 });
 
 test('treats a typed reply as the missing opening button only while awaiting the link request', () => {
-  for (const reply of ['Yes', 'Yes please', 'Sure', 'Okay', 'Send it']) {
+  for (const reply of ['link', 'Link!', 'Yes', 'Yes please', 'Sure', 'Okay', 'Send it']) {
     assert.equal(classifyMindsetReplyForStage(reply, 'awaiting_link_request'), 'app_link_request');
     assert.equal(
       precheckMindsetAutomationScope('app_link_request', reply, 'awaiting_link_request', true),
@@ -260,6 +260,24 @@ test('treats a typed reply as the missing opening button only while awaiting the
     );
   }
   assert.equal(classifyMindsetReplyForStage('Yes', 'ai_follow_up'), 'other');
+});
+
+test('resends the app link when delivery failed without consulting open-ended conversation', () => {
+  for (const reply of [
+    "i didn't get it",
+    'I did not receive the link',
+    'I never got it',
+    'the link did not come through',
+    'nothing showed up',
+  ]) {
+    assert.equal(classifyMindsetReplyForStage(reply, 'link_sent'), 'app_link_request', reply);
+    assert.equal(
+      precheckMindsetAutomationScope('app_link_request', reply, 'link_sent', false),
+      'in_scope',
+      reply
+    );
+  }
+  assert.equal(classifyMindsetReplyForStage("i didn't get it", 'awaiting_use_status'), 'not_yet');
 });
 
 test('enforces a conservative messaging window', () => {

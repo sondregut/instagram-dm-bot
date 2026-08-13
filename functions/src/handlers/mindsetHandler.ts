@@ -532,7 +532,17 @@ async function handleMindsetAction(
       }
     }
 
-    if (plan.nextStage === 'completed') {
+    if (action === 'app_link_request' && !CLOSED_FUNNEL_STAGES.has(plan.nextStage)) {
+      const journey = journeyForLead(lead);
+      if (journey.followUps.noClick.enabled) {
+        const updated = { ...lead, stage: plan.nextStage, lastUserInteractionAt: now };
+        await scheduleFollowUp(
+          updated,
+          'link_reminder',
+          mindsetCampaignFollowUpDelayMs(journey.followUps.noClick)
+        );
+      }
+    } else if (plan.nextStage === 'completed') {
       await cancelPendingFollowUps(lead.id, 'conversation_completed');
     } else if (action === 'trial_claimed' || action === 'trial_started' || action === 'subscribed') {
       await cancelPendingFollowUps(lead.id, `manual_${action}`);

@@ -41,6 +41,20 @@ test('scope-checks an app-link resend before the deterministic two-message actio
   assert.deepEqual(result.buttons, []);
 });
 
+test('resends the real app link when the person says it did not arrive', async () => {
+  const result = await simulateMindsetTurn(
+    'link_sent',
+    "i didn't get it",
+    activationUrl,
+    [],
+    async () => { throw new Error('Claude should not be called for a failed link delivery'); }
+  );
+  assert.equal(result.reply, 'here you go! hope you like it');
+  assert.deepEqual(result.additionalReplies, ['https://athletemindset.app/app']);
+  assert.equal(result.nextStage, 'link_sent');
+  assert.equal(result.createsHandoff, false);
+});
+
 test('turns Claude link controls into the same real two-message action', async () => {
   const result = await simulateMindsetTurn(
     'awaiting_download_status',
@@ -257,10 +271,10 @@ test('responds naturally when the person only says thanks', async () => {
 test('uses the approved replies for stage-aware yes answers', async () => {
   const missingButtonFallback = await simulateMindsetTurn(
     'awaiting_link_request',
-    'Yes',
+    'link',
     activationUrl,
     [],
-    async () => { throw new Error('Claude should not be called for the missing-button fallback'); }
+    async () => { throw new Error('Claude should not be called when the person replies link'); }
   );
   assert.equal(missingButtonFallback.reply, 'here you go! hope you like it');
   assert.deepEqual(missingButtonFallback.additionalReplies, ['https://athletemindset.app/app']);
