@@ -539,6 +539,7 @@ export interface MindsetTestTurnResult {
   quickReplies: Array<{ title: string; payload: string }>;
   buttons: Array<{ title: string; url: string }>;
   createsHandoff: boolean;
+  handoffReason?: string;
 }
 
 export interface MindsetCampaignsResult {

@@ -4,7 +4,9 @@ import {
   buildMindsetActivationUrl,
   buildMindsetAISystemPrompt,
   buildMindsetAppOpenUrl,
+  buildMindsetDirectAppUrl,
   buildMindsetDownloadDestination,
+  buildMindsetScopeClassifierPrompt,
   chooseMindsetPublicReply,
   classifyMindsetReply,
   classifyMindsetReplyForStage,
@@ -16,14 +18,18 @@ import {
   getMindsetNoClickFollowUpMessage,
   hasMindsetFollowUpCapacity,
   isMindsetAppLinkRequest,
+  isMindsetConversationSessionRecent,
   isWithinMessagingWindow,
   MAX_UNANSWERED_MINDSET_FOLLOW_UPS,
   MESSAGING_WINDOW_MS,
+  MINDSET_CONVERSATION_SESSION_MS,
   mindsetAIControlAction,
   MINDSET_NO_CLICK_FOLLOW_UP_MESSAGE,
   MINDSET_DIRECT_APP_URL,
   MINDSET_PUBLIC_REPLY_VARIANTS,
   parseMindsetPublicReplyVariants,
+  parseMindsetScopeDecision,
+  precheckMindsetAutomationScope,
   requiresMindsetHumanHandoff,
   shouldUseMindsetAIForReplyIntent,
   shouldSuppressMindsetAutomatedReply,
@@ -96,6 +102,11 @@ test('classifies the activation replies that drive the state machine', () => {
   assert.equal(classifyMindsetReply('Was this built by Sondre?'), 'other');
   assert.equal(classifyMindsetReply('Can you help me use Aomi?'), 'other');
   assert.equal(classifyMindsetReply('It helped'), 'feedback_positive');
+  assert.equal(classifyMindsetReply('I like it'), 'feedback_positive');
+  assert.equal(classifyMindsetReply('I love the app'), 'feedback_positive');
+  assert.equal(classifyMindsetReply('I hate the app'), 'feedback_negative');
+  assert.equal(classifyMindsetReply('I hate you'), 'other');
+  assert.equal(classifyMindsetReplyForStage('Good', 'awaiting_feedback'), 'feedback_positive');
   assert.equal(classifyMindsetReply("I didn't like it"), 'feedback_negative');
   assert.equal(classifyMindsetReply('It is too early to tell'), 'feedback_unsure');
   assert.equal(classifyMindsetReply("I can't find the first rep"), 'reason_navigation');
@@ -126,19 +137,27 @@ test('recognizes app-link requests without overriding opt-outs', () => {
     'Send it again',
     'Please resend the link',
     'Can I get the app link?',
+    'Send me the app link again',
     'link please',
     'I need the download link again',
   ]) {
     assert.equal(isMindsetAppLinkRequest(message), true, message);
   }
   assert.equal(isMindsetAppLinkRequest("Don't send it again"), false);
-  assert.equal(MINDSET_DIRECT_APP_URL, 'https://www.athletemindset.app/app');
+  assert.equal(MINDSET_DIRECT_APP_URL, 'https://athletemindset.app/app');
+  assert.equal(buildMindsetDirectAppUrl(), 'https://athletemindset.app/app');
+  assert.equal(
+    buildMindsetDirectAppUrl('https://athletemindset.app/app?source=reel'),
+    'https://athletemindset.app/app?source=reel'
+  );
+  assert.equal(buildMindsetDirectAppUrl('http://example.com'), MINDSET_DIRECT_APP_URL);
 });
 
 test('uses Claude for natural conversation while keeping control outcomes deterministic', () => {
   assert.equal(shouldUseMindsetAIForReplyIntent('not_yet'), true);
   assert.equal(shouldUseMindsetAIForReplyIntent('problem'), true);
-  assert.equal(shouldUseMindsetAIForReplyIntent('feedback_negative'), true);
+  assert.equal(shouldUseMindsetAIForReplyIntent('feedback_negative'), false);
+  assert.equal(shouldUseMindsetAIForReplyIntent('feedback_unsure'), false);
   assert.equal(shouldUseMindsetAIForReplyIntent('other'), true);
   assert.equal(shouldUseMindsetAIForReplyIntent('downloaded'), false);
   assert.equal(shouldUseMindsetAIForReplyIntent('app_link_request'), false);
@@ -146,6 +165,78 @@ test('uses Claude for natural conversation while keeping control outcomes determ
   assert.equal(shouldUseMindsetAIForReplyIntent('price_question'), false);
   assert.equal(shouldUseMindsetAIForReplyIntent('not_interested'), false);
   assert.equal(shouldUseMindsetAIForReplyIntent('human'), false);
+});
+
+test('allows only unambiguous messages to bypass the scope classifier', () => {
+  assert.equal(
+    precheckMindsetAutomationScope('gratitude', 'Thanks', 'link_sent', true),
+    'in_scope'
+  );
+  assert.equal(
+    precheckMindsetAutomationScope('downloaded', 'Yes', 'awaiting_download_status', true),
+    'in_scope'
+  );
+  assert.equal(
+    precheckMindsetAutomationScope('feedback_positive', 'I like it', 'awaiting_use_status', true),
+    'in_scope'
+  );
+  assert.equal(
+    precheckMindsetAutomationScope('feedback_negative', 'bad', 'awaiting_feedback', true),
+    'classify'
+  );
+  assert.equal(
+    precheckMindsetAutomationScope('not_interested', 'Stop messaging me', 'ai_follow_up', false),
+    'in_scope'
+  );
+  assert.equal(
+    precheckMindsetAutomationScope('human', 'Can I talk to Sondre?', 'ai_follow_up', true),
+    'human_required'
+  );
+  assert.equal(
+    precheckMindsetAutomationScope('other', 'What poles do you use?', 'ai_follow_up', true),
+    'classify'
+  );
+  assert.equal(
+    precheckMindsetAutomationScope('gratitude', 'Thanks', 'link_sent', false),
+    'classify'
+  );
+});
+
+test('builds and strictly parses the no-reply scope classifier', () => {
+  const prompt = buildMindsetScopeClassifierPrompt(
+    'awaiting_use_status',
+    'Did you get a chance to try Athlete Mindset?',
+    true
+  );
+  assert.match(prompt, /do not write replies/i);
+  assert.match(prompt, /both an app-related part and an unrelated request is OFF_TOPIC/i);
+  assert.match(prompt, /When in doubt, choose UNCERTAIN/i);
+  assert.match(prompt, /asks about Sondre personally/i);
+  assert.match(prompt, /whether the assistant is Sondre or automated/i);
+  assert.match(prompt, /frustration with repeated automated questions/i);
+  assert.match(prompt, /within seven days/i);
+  assert.match(prompt, /Did you get a chance to try Athlete Mindset\?/);
+
+  assert.equal(parseMindsetScopeDecision('IN_SCOPE'), 'in_scope');
+  assert.equal(parseMindsetScopeDecision('off_topic.'), 'off_topic');
+  assert.equal(parseMindsetScopeDecision('HUMAN_REQUIRED'), 'human_required');
+  assert.equal(parseMindsetScopeDecision('UNCERTAIN'), 'uncertain');
+  assert.equal(parseMindsetScopeDecision('IN_SCOPE\nHere is a reply'), 'uncertain');
+  assert.equal(parseMindsetScopeDecision('I think this is in scope'), 'uncertain');
+});
+
+test('expires short-term conversation context after seven days', () => {
+  const now = 1_000_000_000;
+  assert.equal(
+    isMindsetConversationSessionRecent(now - MINDSET_CONVERSATION_SESSION_MS + 1, now),
+    true
+  );
+  assert.equal(
+    isMindsetConversationSessionRecent(now - MINDSET_CONVERSATION_SESSION_MS, now),
+    false
+  );
+  assert.equal(isMindsetConversationSessionRecent(undefined, now), false);
+  assert.equal(isMindsetConversationSessionRecent(now + 1, now), false);
 });
 
 test('interprets short confirmations only in an unambiguous stage', () => {
@@ -187,7 +278,7 @@ test('allows at most two automated follow-ups without an athlete reply', () => {
 test('uses a casual feedback check only before the tracked app link is clicked', () => {
   assert.equal(
     getMindsetNoClickFollowUpMessage(false),
-    'Hey! Did you get a chance to check out Athlete Mindset yet? Would love to hear what you think.'
+    'hi, just curious what you think of the app so far if you’ve had a chance to try it yet'
   );
   assert.equal(getMindsetNoClickFollowUpMessage(true), null);
   assert.equal(getMindsetNoClickFollowUpMessage(false), MINDSET_NO_CLICK_FOLLOW_UP_MESSAGE);
@@ -213,6 +304,14 @@ test('silently suppresses handoff fallback copy', () => {
     true
   );
   assert.equal(shouldSuppressMindsetAutomatedReply('I will flag this for Sondre.'), true);
+  assert.equal(
+    shouldSuppressMindsetAutomatedReply("I'm just an automated assistant for Athlete Mindset."),
+    true
+  );
+  assert.equal(
+    shouldSuppressMindsetAutomatedReply('I can only help answer questions about Athlete Mindset.'),
+    true
+  );
   assert.equal(shouldSuppressMindsetAutomatedReply('Have you started the trial yet?'), true);
   assert.equal(shouldSuppressMindsetAutomatedReply('Did you subscribe to the offer?'), true);
   assert.equal(shouldSuppressMindsetAutomatedReply('Yes, it works for athletes across sports.'), false);
@@ -242,6 +341,10 @@ test('feeds the canonical app journey and navigation rules to Claude', () => {
   assert.match(onboardingPrompt, /personalized result and then the current App Store subscription offer/i);
   assert.match(onboardingPrompt, /ask what they see before giving one navigation step/i);
   assert.match(onboardingPrompt, /only thank you or acknowledge/i);
+  assert.match(onboardingPrompt, /unrelated, mixed-topic, ambiguous/i);
+  assert.match(onboardingPrompt, /Never answer it or steer it back to the funnel/i);
+  assert.match(onboardingPrompt, /whether you are Sondre, whether you are automated/i);
+  assert.doesNotMatch(onboardingPrompt, /say you are his automated assistant/i);
   assert.match(onboardingPrompt, /Never repeat a question/i);
   assert.match(onboardingPrompt, /do not want the app/i);
   assert.match(onboardingPrompt, /This Instagram assistant is not Aomi/i);

@@ -7,14 +7,14 @@ import type {
 export const DEFAULT_MINDSET_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
   openingMessage: 'Click below to get the link to download Athlete Mindset!\n\nAppreciate you,\nSondre',
   openingButtonText: 'Send me the link',
-  linkMessage: 'Download Athlete Mindset here:',
+  linkMessage: 'here you go! hope you like it',
   linkButtonText: 'Download App',
   destinationUrl: 'https://athletemindset.app/app',
   followUps: {
     noClick: {
       enabled: true,
       delayMinutes: 30,
-      message: 'Hey! Did you get a chance to check out Athlete Mindset yet? Would love to hear what you think.',
+      message: 'hi, just curious what you think of the app so far if you’ve had a chance to try it yet',
     },
     downloadCheck: {
       enabled: true,
@@ -34,6 +34,15 @@ export const DEFAULT_MINDSET_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
   },
 };
 
+const LEGACY_LINK_MESSAGES = new Set([
+  'Download Athlete Mindset here:',
+  'Download Athlete Mindset here',
+]);
+
+const LEGACY_NO_CLICK_MESSAGES = new Set([
+  'Hey! Did you get a chance to check out Athlete Mindset yet? Would love to hear what you think.',
+]);
+
 export const MINDSET_FOLLOW_UP_KEYS: MindsetCampaignFollowUpKey[] = [
   'noClick',
   'downloadCheck',
@@ -45,16 +54,27 @@ function textValue(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.trim() ? value : fallback;
 }
 
+function linkMessageValue(value: unknown): string {
+  const message = textValue(value, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.linkMessage).trim();
+  return LEGACY_LINK_MESSAGES.has(message)
+    ? DEFAULT_MINDSET_CAMPAIGN_JOURNEY.linkMessage
+    : message;
+}
+
 function followUpValue(
+  key: MindsetCampaignFollowUpKey,
   value: Partial<MindsetCampaignFollowUp> | undefined,
   fallback: MindsetCampaignFollowUp
 ): MindsetCampaignFollowUp {
+  const message = textValue(value?.message, fallback.message);
   return {
     enabled: value?.enabled !== false,
     delayMinutes: typeof value?.delayMinutes === 'number' && Number.isFinite(value.delayMinutes)
       ? Math.round(value.delayMinutes)
       : fallback.delayMinutes,
-    message: textValue(value?.message, fallback.message),
+    message: key === 'noClick' && LEGACY_NO_CLICK_MESSAGES.has(message)
+      ? fallback.message
+      : message,
   };
 }
 
@@ -63,14 +83,14 @@ export function normalizeMindsetCampaignJourney(value?: Partial<MindsetCampaignJ
   return {
     openingMessage: textValue(value?.openingMessage, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.openingMessage),
     openingButtonText: textValue(value?.openingButtonText, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.openingButtonText),
-    linkMessage: textValue(value?.linkMessage, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.linkMessage),
+    linkMessage: linkMessageValue(value?.linkMessage),
     linkButtonText: textValue(value?.linkButtonText, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.linkButtonText),
     destinationUrl: textValue(value?.destinationUrl, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.destinationUrl),
     followUps: {
-      noClick: followUpValue(followUps.noClick, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps.noClick),
-      downloadCheck: followUpValue(followUps.downloadCheck, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps.downloadCheck),
-      useCheck: followUpValue(followUps.useCheck, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps.useCheck),
-      feedbackCheck: followUpValue(followUps.feedbackCheck, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps.feedbackCheck),
+      noClick: followUpValue('noClick', followUps.noClick, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps.noClick),
+      downloadCheck: followUpValue('downloadCheck', followUps.downloadCheck, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps.downloadCheck),
+      useCheck: followUpValue('useCheck', followUps.useCheck, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps.useCheck),
+      feedbackCheck: followUpValue('feedbackCheck', followUps.feedbackCheck, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps.feedbackCheck),
     },
   };
 }
@@ -80,7 +100,6 @@ export function validateMindsetCampaignJourney(journey: MindsetCampaignJourney):
   if (journey.openingMessage.trim().length < 2 || journey.openingMessage.trim().length > 500) errors.push('Opening DM');
   if (journey.openingButtonText.trim().length < 2 || journey.openingButtonText.trim().length > 20) errors.push('Opening button');
   if (journey.linkMessage.trim().length < 2 || journey.linkMessage.trim().length > 80) errors.push('Link message');
-  if (journey.linkButtonText.trim().length < 2 || journey.linkButtonText.trim().length > 20) errors.push('Link button');
   try {
     const url = new URL(journey.destinationUrl.trim());
     if (url.protocol !== 'https:' || url.username || url.password) errors.push('Secure app link');

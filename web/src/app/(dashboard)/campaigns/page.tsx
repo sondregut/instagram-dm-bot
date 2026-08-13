@@ -362,7 +362,7 @@ function JourneyStrip() {
     { icon: Megaphone, label: 'Keyword comment' },
     { icon: ChatsCircle, label: 'Public reply' },
     { icon: PaperPlaneTilt, label: 'Editable opening DM' },
-    { icon: LinkSimple, label: 'Tracked app link' },
+    { icon: LinkSimple, label: 'Direct app link' },
     { icon: ClockCountdown, label: 'Timed follow-ups' },
   ];
   return (
@@ -564,7 +564,7 @@ function CampaignDetails({
             <JourneyRow number="1" icon={Megaphone} title={`Comment contains ${campaign.keyword}`} detail={campaignPostScopeDetail(campaign)} />
             <JourneyRow number="2" icon={ChatsCircle} title={campaign.publicReplyEnabled ? 'Reply publicly after the DM succeeds' : 'Skip the public comment reply'} detail={campaign.publicReplyEnabled ? `${publicReplies.length} reply variation${publicReplies.length === 1 ? '' : 's'} rotate automatically` : 'The private DM still sends'} />
             <JourneyRow number="3" icon={PaperPlaneTilt} title="Send the opening DM" detail={`Button: ${journey.openingButtonText}`} />
-            <JourneyRow number="4" icon={LinkSimple} title="Send the tracked app link" detail={`${journey.linkButtonText} opens ${mindsetDestinationHost(journey.destinationUrl)}`} />
+            <JourneyRow number="4" icon={LinkSimple} title="Send the app link in two messages" detail={`A short note, then the direct ${mindsetDestinationHost(journey.destinationUrl)} link`} />
             <JourneyRow number="5" icon={ClockCountdown} title={`${activeFollowUps.length} follow-up${activeFollowUps.length === 1 ? '' : 's'} enabled`} detail="Replies, clicks, milestones, and conversions stop messages that are no longer relevant" last />
           </div>
 
@@ -866,13 +866,13 @@ const JOURNEY_EDITOR_STEPS: Array<{
   icon: typeof PaperPlaneTilt;
 }> = [
   { id: 'opening', label: 'Opening DM', detail: 'Message and quick reply', icon: PaperPlaneTilt },
-  { id: 'link', label: 'App link', detail: 'Tracked button and destination', icon: LinkSimple },
+  { id: 'link', label: 'App link', detail: 'Direct URL and preview', icon: LinkSimple },
   { id: 'followups', label: 'Follow-ups', detail: 'Timing and messages', icon: ClockCountdown },
   { id: 'guardrails', label: 'Safety rules', detail: 'Locked delivery limits', icon: ShieldCheck },
 ];
 
 const FOLLOW_UP_META: Record<MindsetCampaignFollowUpKey, { label: string; trigger: string }> = {
-  noClick: { label: 'Link not clicked', trigger: 'After the app button is sent' },
+  noClick: { label: 'After link sent', trigger: 'If the athlete has not replied' },
   downloadCheck: { label: 'App not opened', trigger: 'After a tracked link click' },
   useCheck: { label: 'First rep not started', trigger: 'After the app is opened' },
   feedbackCheck: { label: 'Ask for feedback', trigger: 'After the first rep is completed' },
@@ -969,14 +969,14 @@ function DmJourneyEditor({
                 />
                 <CharacterCount current={journey.openingButtonText.length} maximum={20} />
               </label>
-              <InlineInfo icon={ChatsCircle} title="Instagram requires this tap" detail="The first quick reply opens the normal messaging window. The clickable app button is sent immediately after the athlete taps it." />
+              <InlineInfo icon={ChatsCircle} title="Instagram requires this tap" detail="The first quick reply opens the normal messaging window. The short note and direct app link are sent immediately after the athlete taps it." />
             </div>
           )}
 
           {activeStep === 'link' && (
             <div>
-              <JourneyPanelHeading title="Configure the tracked app link" detail="Every athlete gets a unique redirect so clicks can be attributed to this conversation." />
-              <div className="mt-5 grid gap-4 sm:grid-cols-[minmax(0,1fr)_170px]">
+              <JourneyPanelHeading title="Configure the app link" detail="The note and URL are sent as separate messages so Instagram can render the App Store link preview." />
+              <div className="mt-5">
                 <label className="block">
                   <span className="text-sm font-semibold text-slate-800">Link message</span>
                   <input
@@ -986,16 +986,6 @@ function DmJourneyEditor({
                     className={fieldClassName}
                   />
                   <CharacterCount current={journey.linkMessage.length} maximum={80} />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-semibold text-slate-800">Button label</span>
-                  <input
-                    value={journey.linkButtonText}
-                    maxLength={20}
-                    onChange={(event) => updateJourney('linkButtonText', event.target.value)}
-                    className={fieldClassName}
-                  />
-                  <CharacterCount current={journey.linkButtonText.length} maximum={20} />
                 </label>
               </div>
               <label className="mt-4 block">
@@ -1015,9 +1005,9 @@ function DmJourneyEditor({
                     </a>
                   )}
                 </div>
-                <FieldHint invalid={!isSafeHttpsUrl(journey.destinationUrl)}>Use a complete HTTPS link. Tracking and Instagram attribution are added automatically.</FieldHint>
+                <FieldHint invalid={!isSafeHttpsUrl(journey.destinationUrl)}>Use the clean HTTPS app link you want Instagram to preview.</FieldHint>
               </label>
-              <InlineInfo icon={CursorClick} title="Tracked redirect stays in place" detail="The Instagram button opens a unique bot link first, records the click, and then forwards the athlete to this destination." />
+              <InlineInfo icon={CursorClick} title="Clean link preview" detail="The app URL is sent as its own message so Instagram can show the image preview. The later check-in is plain text and does not add another button." />
             </div>
           )}
 
@@ -1081,7 +1071,7 @@ function DmJourneyEditor({
                       />
                       <CharacterCount current={journey.followUps[activeFollowUp].message.length} maximum={500} />
                     </label>
-                    {activeFollowUp === 'noClick' && <p className="mt-3 text-[11px] leading-5 text-slate-500">The tracked app button is included again with this reminder.</p>}
+                    {activeFollowUp === 'noClick' && <p className="mt-3 text-[11px] leading-5 text-slate-500">This check-in is sent as a normal text message with no button.</p>}
                   </div>
                 </div>
               </div>
@@ -1274,8 +1264,9 @@ function InstagramPreview({
               )}
               {dmStep === 'link' && (
                 <>
-                  <PreviewMessage text={journey.linkMessage} button={journey.linkButtonText} icon={LinkSimple} />
-                  <p className="px-2 text-[9px] leading-4 text-slate-400">Tracked redirect to {mindsetDestinationHost(journey.destinationUrl)}</p>
+                  <PreviewMessage text={journey.linkMessage} />
+                  <PreviewMessage text={journey.destinationUrl} icon={LinkSimple} />
+                  <p className="px-2 text-[9px] leading-4 text-slate-400">Instagram can render the App Store image preview from this direct link.</p>
                 </>
               )}
               {dmStep === 'followup' && visibleFollowUp && (
@@ -1284,7 +1275,7 @@ function InstagramPreview({
                     {enabledFollowUps.map((key) => <button key={key} type="button" onClick={() => setPreviewFollowUp(key)} className={cn('min-w-max rounded-full px-2 py-1 text-[8px] font-semibold transition', visibleFollowUp === key ? 'bg-slate-950 text-white' : 'bg-white text-slate-500')}>{FOLLOW_UP_META[key].label}</button>)}
                   </div>
                   <p className="px-1 text-[9px] font-medium text-slate-400">After {formatMindsetDelay(journey.followUps[visibleFollowUp].delayMinutes)}</p>
-                  <PreviewMessage text={journey.followUps[visibleFollowUp].message} button={visibleFollowUp === 'noClick' ? journey.linkButtonText : undefined} icon={visibleFollowUp === 'noClick' ? LinkSimple : undefined} />
+                  <PreviewMessage text={journey.followUps[visibleFollowUp].message} />
                 </>
               )}
               {dmStep === 'followup' && !visibleFollowUp && (

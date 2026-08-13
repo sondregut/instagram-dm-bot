@@ -14,15 +14,20 @@ import {
   buildMindsetActivationUrl,
   buildMindsetAppOpenUrl,
   buildMindsetAISystemPrompt,
+  buildMindsetDirectAppUrl,
+  buildMindsetScopeClassifierPrompt,
   buildMindsetDownloadDestination,
-  buildMindsetDownloadRedirectUrl,
   chooseMindsetPublicReply,
   classifyMindsetReplyForStage,
   constrainMindsetAIReply,
   hasMindsetFollowUpCapacity,
+  isMindsetConversationSessionRecent,
   isWithinMessagingWindow,
   MAX_UNANSWERED_MINDSET_FOLLOW_UPS,
+  MINDSET_SCOPE_CLASSIFIER_MAX_TOKENS,
   mindsetAIControlAction,
+  parseMindsetScopeDecision,
+  precheckMindsetAutomationScope,
   requiresMindsetHumanHandoff,
   shouldUseMindsetAIForReplyIntent,
   shouldSuppressMindsetAutomatedReply,
@@ -139,6 +144,7 @@ interface MindsetMessageEvent {
     text?: string;
     is_echo?: boolean;
     quick_reply?: { payload: string };
+    attachments?: unknown[];
   };
   postback?: { payload: string };
 }
@@ -207,6 +213,31 @@ export async function handleMindsetComment(
     await db.collection(COMMENT_EVENTS)
       .doc(safeDocumentId(`${account.id}_${event.id}`))
       .set({ status: 'blocked_isolation_violation', updatedAt: now }, { merge: true });
+    return true;
+  }
+  if (existingLead && (existingLead.automationPaused || existingLead.stage === 'human_handoff')) {
+    await Promise.all([
+      ref.set({
+        username: event.from.username,
+        history: admin.firestore.FieldValue.arrayUnion({
+          role: 'user',
+          content: `[Comment] ${event.text.substring(0, 200)}`,
+          at: now,
+          conversationId: id,
+        }),
+        updatedAt: now,
+      }, { merge: true }),
+      db.collection(COMMENT_EVENTS)
+        .doc(safeDocumentId(`${account.id}_${event.id}`))
+        .set({
+          status: 'completed',
+          skippedReason: 'automation_paused',
+          privateReplySent: false,
+          publicReplySent: false,
+          updatedAt: now,
+        }, { merge: true }),
+    ]);
+    console.log('[Mindset] Keyword comment recorded without a reply because the conversation is human-owned');
     return true;
   }
   const linkToken = existingLead?.linkToken || randomUUID();
@@ -428,19 +459,24 @@ async function handleMindsetAction(
   if (action === 'send_link') {
     if (!token || token !== lead.linkToken) throw new Error('Invalid link-request token');
     const journey = journeyForLead(lead);
-    const sent = await sendInstagramButtonDM(
-      senderId,
-      journey.linkMessage,
-      [{ title: journey.linkButtonText, url: buildMindsetDownloadRedirectUrl(lead.linkToken) }],
-      account
-    );
-    if (!sent) throw new Error('Download button message failed');
-
     const nextStage = CLOSED_FUNNEL_STAGES.has(lead.stage) ? lead.stage : 'link_sent';
-    await updateLeadHistory(ref, 'assistant', `${journey.linkMessage} [${journey.linkButtonText}]`, {
-      stage: nextStage,
-      lastUserInteractionAt: now,
-    });
+    const messages = [
+      journey.linkMessage,
+      buildMindsetDirectAppUrl(journey.destinationUrl),
+    ];
+    for (let index = 0; index < messages.length; index++) {
+      const message = messages[index];
+      const sent = await sendInstagramDM(senderId, message, account, { conversationId: ref.id });
+      if (!sent) throw new Error(`Download link message ${index + 1} failed`);
+      await updateLeadHistory(
+        ref,
+        'assistant',
+        message,
+        index === messages.length - 1
+          ? { stage: nextStage, lastUserInteractionAt: now }
+          : {}
+      );
+    }
     if (!CLOSED_FUNNEL_STAGES.has(lead.stage) && journey.followUps.noClick.enabled) {
       const updated = { ...lead, stage: nextStage, lastUserInteractionAt: now };
       await scheduleFollowUp(
@@ -453,7 +489,7 @@ async function handleMindsetAction(
   }
 
   if (CLOSED_FUNNEL_STAGES.has(lead.stage)
-      && !['app_link_request', 'onboarding_help', 'complete', 'human', 'subscribed', 'gratitude'].includes(action)) {
+      && !['app_link_request', 'trial_claimed', 'trial_started', 'human', 'subscribed'].includes(action)) {
     console.log(`[Mindset] Ignoring stale funnel action in ${lead.stage}`);
     return;
   }
@@ -496,7 +532,9 @@ async function handleMindsetAction(
       }
     }
 
-    if (action === 'trial_claimed' || action === 'trial_started' || action === 'subscribed') {
+    if (plan.nextStage === 'completed') {
+      await cancelPendingFollowUps(lead.id, 'conversation_completed');
+    } else if (action === 'trial_claimed' || action === 'trial_started' || action === 'subscribed') {
       await cancelPendingFollowUps(lead.id, `manual_${action}`);
     } else if (action === 'downloaded') {
       await cancelPendingFollowUps(lead.id, 'download_confirmed', ['link_reminder', 'download_check']);
@@ -539,7 +577,13 @@ export async function handleMindsetMessage(
   }
   const payload = event.message?.quick_reply?.payload || event.postback?.payload;
   const text = event.message?.text?.trim() || '';
+  const hasAttachment = Array.isArray(event.message?.attachments)
+    && event.message.attachments.length > 0;
   const now = admin.firestore.Timestamp.now();
+  const conversationWasRecent = isMindsetConversationSessionRecent(
+    lead.lastUserInteractionAt?.toMillis(),
+    now.toMillis()
+  );
 
   // Meta grants messaging-profile access only after the user interacts in DM.
   // Start enrichment at that boundary without putting it in front of the reply.
@@ -557,6 +601,24 @@ export async function handleMindsetMessage(
       return true;
     }
     await handleMindsetAction(action, senderId, lead, ref, account, token);
+    await profileRefreshPromise;
+    return true;
+  }
+
+  if (hasAttachment) {
+    await updateLeadHistory(
+      ref,
+      'user',
+      text ? `${text} [Instagram attachment]` : '[Instagram attachment]',
+      {
+        lastUserInteractionAt: now,
+        unansweredFollowUpCount: 0,
+      }
+    );
+    await cancelPendingFollowUps(lead.id, 'user_replied_with_attachment');
+    if (!lead.automationPaused && lead.stage !== 'human_handoff') {
+      await createSilentMindsetHandoff(ref, lead, 'attachment_requires_review');
+    }
     await profileRefreshPromise;
     return true;
   }
@@ -580,8 +642,71 @@ export async function handleMindsetMessage(
     return true;
   }
   const intent = classifyMindsetReplyForStage(text, lead.stage);
-  const isNewPaidConfirmation = intent === 'subscribed'
-    && !['subscription_claimed', 'subscribed'].includes(lead.stage);
+  const mayContinueAfterClosedFunnel = [
+    'app_link_request',
+    'trial_started',
+    'subscribed',
+  ].includes(intent);
+  if (CLOSED_FUNNEL_STAGES.has(lead.stage) && !mayContinueAfterClosedFunnel) {
+    console.log(`[Mindset] Conversation already complete; storing the message without replying (${intent})`);
+    await profileRefreshPromise;
+    return true;
+  }
+  const scopePrecheck = precheckMindsetAutomationScope(
+    intent,
+    text,
+    lead.stage,
+    conversationWasRecent
+  );
+  let scopeDecision = scopePrecheck;
+  let scopeClassifierUsedAI = true;
+  if (scopePrecheck === 'classify') {
+    const previousAssistantMessage = [...(lead.history || [])]
+      .reverse()
+      .find((message) => (
+        message.role === 'assistant'
+        && isMindsetHistoryEntryInConversation(message, lead.id)
+      ))?.content;
+    const scopeResult = await generateIsolatedAIResponseWithStatus(
+      buildMindsetScopeClassifierPrompt(
+        lead.stage,
+        previousAssistantMessage,
+        conversationWasRecent
+      ),
+      [{ role: 'user', content: text }],
+      {
+        maxTokens: MINDSET_SCOPE_CLASSIFIER_MAX_TOKENS,
+        userMessage: text,
+        fallbackResponse: '',
+      }
+    );
+    scopeClassifierUsedAI = scopeResult.usedAI;
+    scopeDecision = scopeResult.usedAI
+      ? parseMindsetScopeDecision(scopeResult.text)
+      : 'uncertain';
+  }
+  if (scopeDecision !== 'in_scope') {
+    const handoffReason = !scopeClassifierUsedAI
+      ? 'scope_classifier_unavailable'
+      : scopeDecision === 'off_topic'
+        ? 'off_topic'
+        : scopeDecision === 'human_required'
+          ? 'scope_human_required'
+          : 'scope_uncertain';
+    console.log(`[Mindset] Free-text reply blocked by scope gate: ${handoffReason}`);
+    await createSilentMindsetHandoff(ref, lead, handoffReason);
+    await profileRefreshPromise;
+    return true;
+  }
+
+  const isNewConversionConfirmation = (
+    intent === 'subscribed'
+      && !['subscription_claimed', 'subscribed'].includes(lead.stage)
+  ) || (
+    intent === 'trial_started'
+      && !['trial_claimed', 'trial_started', 'subscribed'].includes(lead.stage)
+  );
+  const isAllowedClosedFunnelAction = intent === 'app_link_request' || isNewConversionConfirmation;
   const isSafeTerminalAcknowledgement = intent === 'gratitude' || intent === 'not_interested';
   if (!shouldUseMindsetAIForReplyIntent(intent)
       && (![
@@ -590,7 +715,7 @@ export async function handleMindsetMessage(
         'trial_started',
         'subscribed',
         'completed',
-      ].includes(lead.stage) || isNewPaidConfirmation || isSafeTerminalAcknowledgement)) {
+      ].includes(lead.stage) || isAllowedClosedFunnelAction || isSafeTerminalAcknowledgement)) {
     await handleMindsetAction(intent, senderId, lead, ref, account);
     await profileRefreshPromise;
     return true;
@@ -721,14 +846,12 @@ export async function processMindsetFollowUps(): Promise<number> {
       let sent = false;
       let message = '';
       let nextStage: MindsetStage | null = null;
-      let buttons: Array<{ title: string; url: string }> | null = null;
       const journey = journeyForLead(lead);
 
       if (item.type === 'link_reminder'
           && journey.followUps.noClick.enabled
           && !lead.downloadClickedAt) {
         message = journey.followUps.noClick.message;
-        buttons = [{ title: journey.linkButtonText, url: buildMindsetDownloadRedirectUrl(lead.linkToken) }];
       } else if (item.type === 'download_check'
           && journey.followUps.downloadCheck.enabled
           && !lead.appOpenedAt
@@ -778,14 +901,12 @@ export async function processMindsetFollowUps(): Promise<number> {
           continue;
         }
 
-        sent = buttons
-          ? await sendInstagramButtonDM(lead.instagramUserId, message, buttons, account)
-          : await sendInstagramDM(
-            lead.instagramUserId,
-            message,
-            account,
-            { conversationId: leadSnapshot.id }
-          );
+        sent = await sendInstagramDM(
+          lead.instagramUserId,
+          message,
+          account,
+          { conversationId: leadSnapshot.id }
+        );
         if (!sent) throw new Error(`${item.type} message failed to send`);
         await updateLeadHistory(
           leadSnapshot.ref,
@@ -911,7 +1032,9 @@ export async function recordMindsetActivationEvent(
     await cancelPendingFollowUps(lead.id, 'first_rep_started', ['use_check']);
   } else if (event === 'first_rep_completed') {
     await cancelPendingFollowUps(lead.id, 'first_rep_completed', ['use_check']);
-    if (isFirstOccurrence && journey.followUps.feedbackCheck.enabled) {
+    if (isFirstOccurrence
+        && !CLOSED_FUNNEL_STAGES.has(nextStage)
+        && journey.followUps.feedbackCheck.enabled) {
       await scheduleFollowUp(
         updatedLead,
         'feedback_check',

@@ -16,6 +16,30 @@ test('normalizes legacy campaigns to the complete default journey', () => {
     DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps.useCheck.message,
     'hi, just curious what you think of the app so far if you’ve had a chance to try it yet'
   );
+  assert.equal(
+    DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps.noClick.message,
+    'hi, just curious what you think of the app so far if you’ve had a chance to try it yet'
+  );
+  assert.equal(
+    DEFAULT_MINDSET_CAMPAIGN_JOURNEY.linkMessage,
+    'here you go! hope you like it'
+  );
+  assert.equal(
+    normalizeMindsetCampaignJourney({ linkMessage: 'Download Athlete Mindset here:' }).linkMessage,
+    'here you go! hope you like it'
+  );
+  assert.equal(
+    normalizeMindsetCampaignJourney({
+      followUps: {
+        noClick: {
+          enabled: true,
+          delayMinutes: 30,
+          message: 'Hey! Did you get a chance to check out Athlete Mindset yet? Would love to hear what you think.',
+        },
+      },
+    }).followUps.noClick.message,
+    'hi, just curious what you think of the app so far if you’ve had a chance to try it yet'
+  );
 });
 
 test('preserves editable message, link, and follow-up settings', () => {
@@ -62,6 +86,18 @@ test('disabled follow-ups do not require timing or message validation', () => {
     followUps: {
       ...DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps,
       feedbackCheck: { enabled: false, delayMinutes: 0, message: '' },
+    },
+  });
+  assert.deepEqual(errors, []);
+});
+
+test('does not require a reminder button because follow-ups are plain text', () => {
+  const errors = validateMindsetCampaignJourney({
+    ...DEFAULT_MINDSET_CAMPAIGN_JOURNEY,
+    linkButtonText: 'This label would be too long',
+    followUps: {
+      ...DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps,
+      noClick: { enabled: true, delayMinutes: 30, message: 'checking in' },
     },
   });
   assert.deepEqual(errors, []);

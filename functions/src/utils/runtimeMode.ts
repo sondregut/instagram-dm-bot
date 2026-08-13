@@ -28,3 +28,15 @@ export function isMindsetTestMode(): boolean {
 export function isLegacyAutomationEnabled(): boolean {
   return getBotMode() === 'full';
 }
+
+/**
+ * The Athlete Mindset target account must never fall through to the older
+ * general-purpose AI handlers. Those handlers are valid only for other
+ * accounts when explicit full mode is enabled.
+ */
+export function shouldRunLegacyAutomation(
+  mode: BotMode,
+  isMindsetTargetAccount: boolean
+): boolean {
+  return mode === 'full' && !isMindsetTargetAccount;
+}

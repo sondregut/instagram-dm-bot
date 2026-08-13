@@ -7,7 +7,10 @@ import {
 function result(
   reply: string,
   nextStage: MindsetConversationStage,
-  options: Partial<Pick<MindsetTestTurnResult, 'quickReplies' | 'buttons' | 'createsHandoff'>> = {}
+  options: Partial<Pick<
+    MindsetTestTurnResult,
+    'quickReplies' | 'buttons' | 'createsHandoff' | 'handoffReason'
+  >> = {}
 ): MindsetTestTurnResult {
   return {
     reply,
@@ -16,6 +19,7 @@ function result(
     quickReplies: [],
     buttons: options.buttons || [],
     createsHandoff: options.createsHandoff === true,
+    handoffReason: options.handoffReason,
   };
 }
 
@@ -145,7 +149,10 @@ function simulateReviewQuickReply(
     case 'reason_no_time':
       return result('Understood. When would be a realistic time for you to try the first rep?', 'ai_follow_up');
     case 'human':
-      return result('', 'human_handoff', { createsHandoff: true });
+      return result('', 'human_handoff', {
+        createsHandoff: true,
+        handoffReason: 'human_required',
+      });
     default:
       return null;
   }
@@ -167,11 +174,15 @@ export async function simulateReviewMindsetTurn(
     return result('Nice! How did that first mental rep feel?', 'awaiting_feedback');
   }
 
-  if (/\b(?:send|share|drop|give)(?:\s+(?:me\s+)?)?(?:it|that|(?:the\s+)?(?:app\s+|download\s+)?link|(?:the\s+)?app)(?:\s+(?:over\s+)?again)?\b/.test(message)
-      || /\b(?:resend|re-send)(?:\s+(?:me\s+)?)?(?:it|that|the\s+(?:app\s+|download\s+)?link)?\b/.test(message)) {
+  const clearlyUnrelatedLink = /\blink\b.{0,35}\b(?:video|youtube|post|reel|pole vault|spikes?|poles?)\b/.test(message)
+    || /\b(?:video|youtube|post|reel|pole vault|spikes?|poles?)\b.{0,35}\blink\b/.test(message);
+  if (!clearlyUnrelatedLink && (
+    /\b(?:send|share|drop|give)(?:\s+(?:me\s+)?)?(?:it|that|(?:the\s+)?(?:app\s+|download\s+)?link|(?:the\s+)?app)(?:\s+(?:over\s+)?again)?\b/.test(message)
+      || /\b(?:resend|re-send)(?:\s+(?:me\s+)?)?(?:it|that|the\s+(?:app\s+|download\s+)?link)?\b/.test(message)
+  )) {
     return {
-      ...result('here you go', input.stage),
-      additionalReplies: ['https://www.athletemindset.app/app'],
+      ...result('here you go! hope you like it', input.stage),
+      additionalReplies: ['https://athletemindset.app/app'],
     };
   }
 
@@ -189,7 +200,7 @@ export async function simulateReviewMindsetTurn(
     return result(
       '',
       'human_handoff',
-      { createsHandoff: true }
+      { createsHandoff: true, handoffReason: 'human_required' }
     );
   }
 
@@ -364,8 +375,16 @@ export async function simulateReviewMindsetTurn(
     );
   }
 
-  const contextualReply = /pole vault|runner|running|football|soccer|basketball|sport/.test(message)
-    ? 'Athlete Mindset is designed for athletes across sports. What mental skill would you most like help training?'
-    : 'I can help with Athlete Mindset. What would you most like to improve mentally in your sport?';
-  return result(contextualReply, 'ai_follow_up');
+  if (/\bdoes (?:this|athlete mindset|the app) (?:work|help|support)\b/.test(message)
+      && /\b(?:pole vault|runner|running|football|soccer|basketball|athlete|sport)\b/.test(message)) {
+    return result(
+      'Athlete Mindset is designed for athletes across sports. It helps train mental skills such as nerves, confidence, focus, and preparation.',
+      'ai_follow_up'
+    );
+  }
+
+  return result('', 'human_handoff', {
+    createsHandoff: true,
+    handoffReason: 'off_topic_or_uncertain',
+  });
 }

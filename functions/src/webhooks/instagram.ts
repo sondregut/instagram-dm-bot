@@ -12,7 +12,8 @@ import {
 import { getAccountByInstagramId, updateAccountWebhookTimestamp } from '../services/accounts';
 import { InstagramAccount } from '../firebase';
 import { handleMindsetComment, handleMindsetMessage } from '../handlers/mindsetHandler';
-import { BotMode, getBotMode } from '../utils/runtimeMode';
+import { isMindsetAccountAllowed } from '../services/mindsetCampaigns';
+import { BotMode, getBotMode, shouldRunLegacyAutomation } from '../utils/runtimeMode';
 import { verifyMetaWebhookSignature } from '../utils/webhookSignature';
 
 /**
@@ -97,6 +98,8 @@ async function processWebhookEvents(entry: any[], mode: BotMode): Promise<void> 
     await updateAccountWebhookTimestamp(account.id);
 
     console.log(`[Webhook] Processing event for account: ${account.username} (${account.id})`);
+    const mindsetTargetAccount = isMindsetAccountAllowed(account);
+    const legacyAutomationAllowed = shouldRunLegacyAutomation(mode, mindsetTargetAccount);
 
     // Handle direct messages and story events
     if (event.messaging && Array.isArray(event.messaging)) {
@@ -104,7 +107,7 @@ async function processWebhookEvents(entry: any[], mode: BotMode): Promise<void> 
         try {
           // Check for story mention events
           if (isStoryMentionEvent(messagingEvent)) {
-            if (mode !== 'full') continue;
+            if (!legacyAutomationAllowed) continue;
             console.log('[Webhook] Processing story mention event');
             await handleStoryMention(messagingEvent as InstagramStoryMentionEvent, account);
             continue;
@@ -112,14 +115,14 @@ async function processWebhookEvents(entry: any[], mode: BotMode): Promise<void> 
 
           // Check for story reply events (message with story context)
           if (isStoryReplyEvent(messagingEvent)) {
-            if (mode !== 'full') continue;
+            if (!legacyAutomationAllowed) continue;
             console.log('[Webhook] Processing story reply event');
             await handleStoryReply(messagingEvent as InstagramStoryReplyEvent, account);
             continue;
           }
 
           const mindsetHandled = await handleMindsetMessage(messagingEvent as InstagramMessageEvent, account);
-          if (mindsetHandled || mode !== 'full') continue;
+          if (mindsetHandled || !legacyAutomationAllowed) continue;
 
           // Legacy regular message handling is available only in explicit full mode.
           await handleMessage(messagingEvent as InstagramMessageEvent, account);
@@ -136,12 +139,12 @@ async function processWebhookEvents(entry: any[], mode: BotMode): Promise<void> 
           switch (change.field) {
             case 'comments':
               const mindsetHandled = await handleMindsetComment(change.value as InstagramCommentEvent, account);
-              if (mindsetHandled || mode !== 'full') break;
+              if (mindsetHandled || !legacyAutomationAllowed) break;
               await handleComment(change.value as InstagramCommentEvent, account);
               break;
 
             case 'mentions':
-              if (mode !== 'full') break;
+              if (!legacyAutomationAllowed) break;
               // Handle story mentions from changes field (alternative format)
               console.log('[Webhook] Story mention from changes:', change.value);
               if (change.value?.media_type === 'STORY' || change.value?.story_id) {

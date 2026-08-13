@@ -15,6 +15,10 @@ const admin = require('firebase-admin');
 const instagram = require('../lib/services/instagram');
 const ai = require('../lib/services/ai');
 const profiles = require('../lib/services/mindsetProfiles');
+const {
+  RESETTABLE_CONVERSATION_COLLECTIONS,
+  resetConversationDataForInstagramUsername,
+} = require('../lib/services/mindsetConversationReset');
 
 const outbound = [];
 const aiRequests = [];
@@ -38,8 +42,22 @@ instagram.sendInstagramDM = async (recipientId, message, _account, context) => {
 };
 profiles.refreshMindsetLeadProfile = async () => {};
 ai.generateIsolatedAIResponseWithStatus = async (systemPrompt, history) => {
-  aiRequests.push({ systemPrompt, history });
-  if (/refusjon|hacerme daño/i.test(history.at(-1)?.content || '')) {
+  const currentMessage = history.at(-1)?.content || '';
+  const scopeClassifier = /strict routing classifier/i.test(systemPrompt);
+  aiRequests.push({ systemPrompt, history, scopeClassifier });
+  if (scopeClassifier) {
+    if (/refusjon|hacerme daño/i.test(currentMessage)) {
+      return { text: 'HUMAN_REQUIRED', usedAI: true };
+    }
+    if (/poles? and spikes?|what poles do you use|music do athletes listen|private messages/i.test(currentMessage)) {
+      return { text: 'OFF_TOPIC', usedAI: true };
+    }
+    if (/what about that thing/i.test(currentMessage)) {
+      return { text: 'UNCERTAIN', usedAI: true };
+    }
+    return { text: 'IN_SCOPE', usedAI: true };
+  }
+  if (/refusjon|hacerme daño/i.test(currentMessage)) {
     return { text: '[[HANDOFF]]', usedAI: true };
   }
   return {
@@ -105,6 +123,17 @@ function message(instagramUserId, text, recipientId = account.instagramAccountId
     sender: { id: instagramUserId },
     recipient: { id: recipientId },
     message: { text },
+  };
+}
+
+function attachmentMessage(instagramUserId, text = '') {
+  return {
+    sender: { id: instagramUserId },
+    recipient: { id: account.instagramAccountId },
+    message: {
+      text,
+      attachments: [{ type: 'image', payload: { url: 'https://example.com/test.jpg' } }],
+    },
   };
 }
 
@@ -205,16 +234,33 @@ test('runs the protected comment, DM, tracking, AI, isolation, and follow-up jou
   assert.equal(await handleMindsetComment(firstComment, account), true);
   assert.equal(outbound.length, sentBeforeDuplicate, 'duplicate comment sent messages twice');
 
+  const initialLinkBefore = outbound.length;
   assert.equal(await handleMindsetMessage(
     quickReply(userOne, `mindset:send_link:${leadOne.data.linkToken}`),
     account
   ), true);
-  const linkMessage = outbound.at(-1);
-  assert.equal(linkMessage.kind, 'button_dm');
-  assert.equal(linkMessage.recipientId, userOne);
-  assert.equal(linkMessage.buttons[0].title, 'Download App');
-  assert.match(linkMessage.buttons[0].url, /mindsetDownload/);
-  assert.match(linkMessage.buttons[0].url, new RegExp(leadOne.data.linkToken));
+  assert.deepEqual(
+    outbound.slice(initialLinkBefore).map((item) => ({
+      kind: item.kind,
+      message: item.message,
+      recipientId: item.recipientId,
+      conversationId: item.conversationId,
+    })),
+    [
+      {
+        kind: 'dm',
+        message: 'here you go! hope you like it',
+        recipientId: userOne,
+        conversationId: leadOne.id,
+      },
+      {
+        kind: 'dm',
+        message: 'https://athletemindset.app/app',
+        recipientId: userOne,
+        conversationId: leadOne.id,
+      },
+    ]
+  );
 
   leadOne = await leadFor(userOne);
   assert.equal(leadOne.data.stage, 'link_sent');
@@ -291,6 +337,44 @@ test('runs the protected comment, DM, tracking, AI, isolation, and follow-up jou
   assert.equal(outbound.at(-1).message, 'Awesome, excited to hear what you think about it.');
   assert.equal((await yesLead.ref.get()).data().stage, 'awaiting_use_status');
 
+  const feedbackUser = 'ig-feedback-terminal';
+  await handleMindsetComment(comment('comment-feedback-terminal', feedbackUser), account);
+  const feedbackLead = await leadFor(feedbackUser);
+  await feedbackLead.ref.set({ stage: 'awaiting_download_status' }, { merge: true });
+  const pendingUseCheck = await seedDueFollowUp(feedbackLead.id, 'use_check');
+  const pendingFeedbackCheck = await seedDueFollowUp(feedbackLead.id, 'feedback_check');
+
+  const gotItBefore = outbound.length;
+  await handleMindsetMessage(message(feedbackUser, 'I got it'), account);
+  assert.equal(outbound.length, gotItBefore + 1);
+  assert.equal(outbound.at(-1).message, 'Awesome, excited to hear what you think about it.');
+  assert.equal((await feedbackLead.ref.get()).data().stage, 'awaiting_use_status');
+
+  const likedItBefore = outbound.length;
+  const aiBeforeLikedIt = aiRequests.length;
+  await handleMindsetMessage(message(feedbackUser, 'I like it'), account);
+  assert.equal(outbound.length, likedItBefore + 1);
+  assert.equal(outbound.at(-1).message, 'love to hear that!');
+  assert.equal(aiRequests.length, aiBeforeLikedIt, 'clear feedback unexpectedly called Claude');
+  assert.equal((await feedbackLead.ref.get()).data().stage, 'completed');
+  assert.equal((await pendingUseCheck.get()).data().status, 'cancelled');
+  assert.equal((await pendingFeedbackCheck.get()).data().status, 'cancelled');
+
+  const afterCompletion = outbound.length;
+  const aiAfterCompletion = aiRequests.length;
+  await handleMindsetMessage(message(feedbackUser, 'I tried a rep'), account);
+  await handleMindsetMessage(message(feedbackUser, 'Good'), account);
+  assert.equal(outbound.length, afterCompletion, 'completed feedback journey kept replying');
+  assert.equal(aiRequests.length, aiAfterCompletion, 'completed feedback journey called Claude');
+
+  const completedResendBefore = outbound.length;
+  await handleMindsetMessage(message(feedbackUser, 'Send me the app link again'), account);
+  assert.deepEqual(
+    outbound.slice(completedResendBefore).map((item) => item.message),
+    ['here you go! hope you like it', 'https://athletemindset.app/app']
+  );
+  assert.equal((await feedbackLead.ref.get()).data().stage, 'completed');
+
   const userResend = 'ig-user-resend';
   await handleMindsetComment(comment('comment-resend', userResend), account);
   const resendLead = await leadFor(userResend);
@@ -308,24 +392,25 @@ test('runs the protected comment, DM, tracking, AI, isolation, and follow-up jou
     [
       {
         kind: 'dm',
-        message: 'here you go',
+        message: 'here you go! hope you like it',
         recipientId: userResend,
         conversationId: resendLead.id,
       },
       {
         kind: 'dm',
-        message: 'https://www.athletemindset.app/app',
+        message: 'https://athletemindset.app/app',
         recipientId: userResend,
         conversationId: resendLead.id,
       },
     ]
   );
-  assert.equal(aiRequests.length, aiBeforeResend, 'explicit resend unexpectedly called Claude');
+  assert.equal(aiRequests.length, aiBeforeResend + 1, 'explicit resend did not pass through the scope gate');
+  assert.equal(aiRequests.at(-1).scopeClassifier, true);
   const resendAfter = await resendLead.ref.get();
   assert.equal(resendAfter.data().stage, 'ai_follow_up');
   assert.deepEqual(
     resendAfter.data().history.slice(-2).map((entry) => entry.content),
-    ['here you go', 'https://www.athletemindset.app/app']
+    ['here you go! hope you like it', 'https://athletemindset.app/app']
   );
 
   const wrongRecipientBefore = outbound.length;
@@ -382,7 +467,82 @@ test('runs the protected comment, DM, tracking, AI, isolation, and follow-up jou
   assert.equal(multilingualLead.data.automationPaused, true);
   assert.equal(
     (await db.collection('mindset_handoffs').doc(multilingualLead.id).get()).data().reason,
-    'ai_sensitive_handoff'
+    'scope_human_required'
+  );
+
+  const offTopicUser = 'ig-off-topic';
+  await handleMindsetComment(comment('comment-off-topic', offTopicUser), account);
+  const offTopicLeadBefore = await leadFor(offTopicUser);
+  await handleMindsetMessage(
+    quickReply(offTopicUser, `mindset:send_link:${offTopicLeadBefore.data.linkToken}`),
+    account
+  );
+  const offTopicReminder = await db.collection('mindset_followups')
+    .doc(followUpId(offTopicLeadBefore.id, 'link_reminder')).get();
+  assert.equal(offTopicReminder.data().status, 'pending');
+  const offTopicOutboundBefore = outbound.length;
+  await handleMindsetMessage(message(offTopicUser, 'What poles and spikes do you use?'), account);
+  assert.equal(outbound.length, offTopicOutboundBefore, 'off-topic message received a bot reply');
+  const offTopicLead = await leadFor(offTopicUser);
+  assert.equal(offTopicLead.data.stage, 'human_handoff');
+  assert.equal(offTopicLead.data.automationPaused, true);
+  assert.equal((await offTopicReminder.ref.get()).data().status, 'cancelled');
+  assert.equal(
+    (await db.collection('mindset_handoffs').doc(offTopicLead.id).get()).data().reason,
+    'off_topic'
+  );
+
+  const pausedCommentOutboundBefore = outbound.length;
+  await handleMindsetComment(
+    comment('comment-off-topic-again', offTopicUser, 'ADMINTEST123 again'),
+    account
+  );
+  assert.equal(
+    outbound.length,
+    pausedCommentOutboundBefore,
+    'a human-owned conversation restarted from a keyword comment'
+  );
+  const pausedCommentReceipt = await db.collection('mindset_comment_events')
+    .doc(`${accountId}_comment-off-topic-again`).get();
+  assert.equal(pausedCommentReceipt.data().status, 'completed');
+  assert.equal(pausedCommentReceipt.data().skippedReason, 'automation_paused');
+
+  const mixedTopicUser = 'ig-mixed-topic';
+  await handleMindsetComment(comment('comment-mixed-topic', mixedTopicUser), account);
+  const mixedTopicOutboundBefore = outbound.length;
+  await handleMindsetMessage(
+    message(mixedTopicUser, 'Thanks for the app link. What poles do you use?'),
+    account
+  );
+  assert.equal(outbound.length, mixedTopicOutboundBefore, 'mixed-topic message received a bot reply');
+  const mixedTopicLead = await leadFor(mixedTopicUser);
+  assert.equal(mixedTopicLead.data.stage, 'human_handoff');
+  assert.equal(
+    (await db.collection('mindset_handoffs').doc(mixedTopicLead.id).get()).data().reason,
+    'off_topic'
+  );
+
+  const uncertainUser = 'ig-uncertain';
+  await handleMindsetComment(comment('comment-uncertain', uncertainUser), account);
+  const uncertainOutboundBefore = outbound.length;
+  await handleMindsetMessage(message(uncertainUser, 'What about that thing?'), account);
+  assert.equal(outbound.length, uncertainOutboundBefore, 'uncertain message received a bot reply');
+  const uncertainLead = await leadFor(uncertainUser);
+  assert.equal(
+    (await db.collection('mindset_handoffs').doc(uncertainLead.id).get()).data().reason,
+    'scope_uncertain'
+  );
+
+  const attachmentUser = 'ig-attachment';
+  await handleMindsetComment(comment('comment-attachment', attachmentUser), account);
+  const attachmentOutboundBefore = outbound.length;
+  await handleMindsetMessage(attachmentMessage(attachmentUser, 'What do you think?'), account);
+  assert.equal(outbound.length, attachmentOutboundBefore, 'attachment received a bot reply');
+  const attachmentLead = await leadFor(attachmentUser);
+  assert.equal(attachmentLead.data.stage, 'human_handoff');
+  assert.equal(
+    (await db.collection('mindset_handoffs').doc(attachmentLead.id).get()).data().reason,
+    'attachment_requires_review'
   );
 
   const atCapacity = await seedLead('ig-at-capacity', { unansweredFollowUpCount: 2 });
@@ -407,6 +567,19 @@ test('runs the protected comment, DM, tracking, AI, isolation, and follow-up jou
   assert.equal(oneStatuses.filter((status) => status === 'skipped_unanswered_limit').length, 1);
   assert.equal((await oneRemaining.ref.get()).data().unansweredFollowUpCount, 2);
 
+  const plainReminder = await seedLead('ig-plain-reminder');
+  const plainReminderFollowUp = await seedDueFollowUp(plainReminder.id, 'link_reminder');
+  const plainReminderSendStart = outbound.length;
+  await processMindsetFollowUps();
+  assert.equal(outbound.length, plainReminderSendStart + 1);
+  assert.deepEqual(outbound.at(-1), {
+    kind: 'dm',
+    recipientId: plainReminder.data.instagramUserId,
+    message: 'hi, just curious what you think of the app so far if you’ve had a chance to try it yet',
+    conversationId: plainReminder.id,
+  });
+  assert.equal((await plainReminderFollowUp.get()).data().status, 'completed');
+
   const userReplyLead = await seedLead('ig-user-reply');
   const pendingBeforeReply = await seedDueFollowUp(userReplyLead.id, 'link_reminder');
   await handleMindsetMessage(message(userReplyLead.data.instagramUserId, 'Can you explain the app?'), account);
@@ -424,4 +597,24 @@ test('runs the protected comment, DM, tracking, AI, isolation, and follow-up jou
   const failedComment = await db.collection('mindset_comment_events')
     .doc(`${accountId}_comment-private-failure`).get();
   assert.equal(failedComment.data().status, 'failed');
+
+  await Promise.all([
+    db.collection('conversations').doc('legacy-conversation').set({ accountId }),
+    db.collection('leads').doc('legacy-lead').set({ accountId }),
+    db.collection('message_queue').doc('queued-message').set({ accountId }),
+    db.collection('accounts').doc('other-account').set({ username: 'another_account' }),
+    db.collection('conversations').doc('other-conversation').set({ accountId: 'other-account' }),
+  ]);
+  const resetResult = await resetConversationDataForInstagramUsername('SONDRE_PV');
+  assert.equal(resetResult.accountsMatched, 1);
+  assert.ok(resetResult.totalDeleted > 0);
+  for (const collectionName of RESETTABLE_CONVERSATION_COLLECTIONS) {
+    const remaining = await db.collection(collectionName)
+      .where('accountId', '==', accountId)
+      .get();
+    assert.equal(remaining.empty, true, `${collectionName} retained account conversation state`);
+  }
+  assert.equal((await db.collection('accounts').doc(accountId).get()).exists, true);
+  assert.equal((await db.collection('mindset_campaigns').doc(campaignId).get()).exists, true);
+  assert.equal((await db.collection('conversations').doc('other-conversation').get()).exists, true);
 });

@@ -48,7 +48,9 @@ const scenarios = [
   { label: 'Link problem', message: 'The download link does not work.' },
   { label: 'Send link again', message: 'Send it again' },
   { label: 'Did not use it', message: "I downloaded it, but I didn't use it yet." },
-  { label: 'Different topic', message: 'Does this work for pole vaulters too?' },
+  { label: 'App and sport fit', message: 'Does this work for pole vaulters too?' },
+  { label: 'Different topic', message: 'What poles and spikes do you use?' },
+  { label: 'Mixed topic', message: 'Thanks for the app link. What poles do you use?' },
   { label: 'Refund request', message: 'I was charged twice and need a refund.' },
 ];
 
@@ -194,6 +196,11 @@ export default function TestLabPage() {
             <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
               <div className="flex items-center gap-2 text-sm font-semibold"><Warning size={17} weight="fill" />Sondre takes over</div>
               <p className="mt-1 text-xs leading-5 text-amber-800">No automated reply would be sent. The automation would pause and place this conversation in Needs me.</p>
+              {lastResult.handoffReason && (
+                <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-amber-700">
+                  {lastResult.handoffReason.replace(/_/g, ' ')}
+                </p>
+              )}
             </div>
           )}
           {lastResult && !lastResult.createsHandoff && (

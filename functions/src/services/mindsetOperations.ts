@@ -11,6 +11,7 @@ import {
   isWithinMessagingWindow,
   MAX_UNANSWERED_MINDSET_FOLLOW_UPS,
   MESSAGING_WINDOW_MS,
+  MINDSET_SCOPE_CLASSIFIER_MAX_TOKENS,
 } from './mindsetFlowLogic';
 import { simulateMindsetTurn } from './mindsetSimulation';
 import {
@@ -691,7 +692,9 @@ export const simulateMindsetConversationApi = functions.https.onCall(async (data
     history,
     async (systemPrompt, conversationHistory, userMessage) =>
       generateIsolatedAIResponseWithStatus(systemPrompt, conversationHistory, {
-        maxTokens: 300,
+        maxTokens: /strict routing classifier/i.test(systemPrompt)
+          ? MINDSET_SCOPE_CLASSIFIER_MAX_TOKENS
+          : 300,
         userMessage,
         fallbackResponse: '',
       }),

@@ -6,6 +6,7 @@ import {
 } from './mindsetConversationEngine';
 import {
   classifyMindsetReply,
+  classifyMindsetReplyForStage,
   constrainMindsetAIReply,
   normalizeMindsetText,
   requiresMindsetHumanHandoff,
@@ -16,8 +17,8 @@ const activationUrl = 'https://example.com/mindset-open?token=test';
 test('sends a requested app link as its own real message', () => {
   const plan = buildMindsetActionPlan('app_link_request', 'ai_follow_up', activationUrl);
   assert.ok(plan);
-  assert.equal(plan.message, 'here you go');
-  assert.deepEqual(plan.additionalMessages, ['https://www.athletemindset.app/app']);
+  assert.equal(plan.message, 'here you go! hope you like it');
+  assert.deepEqual(plan.additionalMessages, ['https://athletemindset.app/app']);
   assert.equal(plan.nextStage, 'ai_follow_up');
   assert.equal(plan.buttons, undefined);
 });
@@ -31,6 +32,10 @@ const intentCases: Array<[string, ReturnType<typeof classifyMindsetReply>]> = [
   ['How much does it cost?', 'price_question'],
   ['What is the price?', 'price_question'],
   ['It helped a lot', 'feedback_positive'],
+  ['I like it', 'feedback_positive'],
+  ['I love the app', 'feedback_positive'],
+  ['I hate the app', 'feedback_negative'],
+  ['I hate you', 'other'],
   ["I didn't like it", 'feedback_negative'],
   ['It is too early to tell', 'feedback_unsure'],
   ["I can't find the first rep", 'reason_navigation'],
@@ -60,6 +65,7 @@ const intentCases: Array<[string, ReturnType<typeof classifyMindsetReply>]> = [
   ['Am I subscribed?', 'other'],
   ['Yes', 'other'],
   ['Does this work for pole vaulters?', 'other'],
+  ['Send me the app link again', 'app_link_request'],
 ];
 
 test('normalizes Instagram punctuation before intent matching', () => {
@@ -71,6 +77,12 @@ test('classifies realistic free-text replies in priority order', () => {
   intentCases.forEach(([input, expected]) => {
     assert.equal(classifyMindsetReply(input), expected, input);
   });
+});
+
+test('recognizes short feedback in the feedback stage', () => {
+  assert.equal(classifyMindsetReplyForStage('Good', 'awaiting_feedback'), 'feedback_positive');
+  assert.equal(classifyMindsetReplyForStage('Really good!', 'awaiting_feedback'), 'feedback_positive');
+  assert.equal(classifyMindsetReplyForStage('Good', 'awaiting_download_status'), 'other');
 });
 
 test('routes billing and safety messages to a real human handoff', () => {
@@ -157,6 +169,16 @@ test('does not ask for subscription status after positive feedback', () => {
   assert.equal(plan.nextStage, 'completed');
   assert.doesNotMatch(plan.message, /subscrib|trial|paid|purchase|\?/i);
   assert.equal(plan.quickReplies, undefined);
+});
+
+test('ends naturally after a rep or any feedback without another question', () => {
+  for (const action of ['used', 'feedback_positive', 'feedback_unsure', 'feedback_negative']) {
+    const plan = buildMindsetActionPlan(action, 'awaiting_feedback', activationUrl);
+    assert.ok(plan);
+    assert.equal(plan.nextStage, 'completed', action);
+    assert.doesNotMatch(plan.message, /\?/, action);
+    assert.doesNotMatch(plan.message, /—/, action);
+  }
 });
 
 test('creates a silent handoff without an automated reply', () => {

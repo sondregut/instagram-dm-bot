@@ -6,9 +6,12 @@ import {
 } from './mindsetConversationEngine';
 import {
   buildMindsetAISystemPrompt,
+  buildMindsetScopeClassifierPrompt,
   classifyMindsetReplyForStage,
   constrainMindsetAIReply,
   mindsetAIControlAction,
+  parseMindsetScopeDecision,
+  precheckMindsetAutomationScope,
   requiresMindsetHumanHandoff,
   shouldUseMindsetAIForReplyIntent,
   shouldSuppressMindsetAutomatedReply,
@@ -26,6 +29,7 @@ export interface MindsetSimulationResult {
   quickReplies: MindsetQuickReply[];
   buttons: MindsetButton[];
   createsHandoff: boolean;
+  handoffReason?: string;
 }
 
 export type MindsetSimulationAIGenerator = (
@@ -34,13 +38,28 @@ export type MindsetSimulationAIGenerator = (
   userMessage: string
 ) => Promise<{ text: string; usedAI: boolean }>;
 
+export interface MindsetSimulationOptions {
+  conversationIsRecent?: boolean;
+  classifyScope?: MindsetSimulationAIGenerator;
+}
+
+const CLOSED_SIMULATION_STAGES = new Set<MindsetStage>([
+  'trial_claimed',
+  'subscription_claimed',
+  'trial_started',
+  'subscribed',
+  'completed',
+  'human_handoff',
+]);
+
 export async function simulateMindsetTurn(
   stage: MindsetStage,
   message: string,
   activationUrl: string,
   history: MindsetSimulationMessage[] = [],
   generateAI?: MindsetSimulationAIGenerator,
-  quickReplyPayload?: string
+  quickReplyPayload?: string,
+  options: MindsetSimulationOptions = {}
 ): Promise<MindsetSimulationResult> {
   const userMessage = message.trim();
   if (!userMessage) throw new Error('A test message is required');
@@ -52,7 +71,87 @@ export async function simulateMindsetTurn(
     ? 'human'
     : classifyMindsetReplyForStage(userMessage, stage);
   const action = quickReplyAction || classifiedAction;
-  if (quickReplyAction || !shouldUseMindsetAIForReplyIntent(classifiedAction)) {
+  const mayContinueAfterClosedFunnel = [
+    'app_link_request',
+    'trial_started',
+    'subscribed',
+    'human',
+  ].includes(action);
+  if (stage === 'human_handoff'
+      || (CLOSED_SIMULATION_STAGES.has(stage) && !mayContinueAfterClosedFunnel)) {
+    return {
+      reply: '',
+      additionalReplies: [],
+      nextStage: stage,
+      quickReplies: [],
+      buttons: [],
+      createsHandoff: false,
+    };
+  }
+  if (quickReplyAction) {
+    const plan = buildMindsetActionPlan(action, stage, activationUrl);
+    if (plan) {
+      return {
+        reply: plan.message,
+        additionalReplies: plan.additionalMessages || [],
+        nextStage: plan.nextStage,
+        quickReplies: plan.quickReplies || [],
+        buttons: plan.buttons || [],
+        createsHandoff: plan.createsHandoff === true,
+      };
+    }
+  }
+
+  const conversationIsRecent = options.conversationIsRecent !== false;
+  const scopePrecheck = precheckMindsetAutomationScope(
+    classifiedAction,
+    userMessage,
+    stage,
+    conversationIsRecent
+  );
+  let scopeDecision = scopePrecheck;
+  let scopeClassifierUsedAI = true;
+  if (scopePrecheck === 'classify') {
+    const classifier = options.classifyScope || generateAI;
+    const previousAssistantMessage = [...history]
+      .reverse()
+      .find((entry) => entry.role === 'assistant')?.content;
+    const scopeResult = classifier
+      ? await classifier(
+        buildMindsetScopeClassifierPrompt(
+          stage,
+          previousAssistantMessage,
+          conversationIsRecent
+        ),
+        [{ role: 'user', content: userMessage }],
+        userMessage
+      )
+      : { text: '', usedAI: false };
+    scopeClassifierUsedAI = scopeResult.usedAI;
+    scopeDecision = scopeResult.usedAI
+      ? parseMindsetScopeDecision(scopeResult.text)
+      : 'uncertain';
+  }
+  if (scopeDecision !== 'in_scope') {
+    const handoffReason = !scopeClassifierUsedAI
+      ? 'scope_classifier_unavailable'
+      : scopeDecision === 'off_topic'
+        ? 'off_topic'
+        : scopeDecision === 'human_required'
+          ? 'scope_human_required'
+          : 'scope_uncertain';
+    return {
+      reply: '',
+      additionalReplies: [],
+      nextStage: 'human_handoff',
+      quickReplies: [],
+      buttons: [],
+      createsHandoff: true,
+      handoffReason,
+    };
+  }
+
+  if (!shouldUseMindsetAIForReplyIntent(classifiedAction)) {
     const plan = buildMindsetActionPlan(action, stage, activationUrl);
     if (plan) {
       return {
@@ -101,5 +200,12 @@ export async function simulateMindsetTurn(
     quickReplies: [],
     buttons: [],
     createsHandoff,
+    handoffReason: createsHandoff
+      ? aiRequestedHandoff
+        ? 'ai_sensitive_handoff'
+        : !aiResult.usedAI
+          ? 'ai_provider_unavailable'
+          : 'automated_reply_suppressed'
+      : undefined,
   };
 }

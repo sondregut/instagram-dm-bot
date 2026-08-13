@@ -56,7 +56,7 @@ export function buildMindsetActionPlan(
   switch (action) {
     case 'app_link_request':
       return {
-        message: 'here you go',
+        message: 'here you go! hope you like it',
         additionalMessages: [MINDSET_DIRECT_APP_URL],
         nextStage: stage === 'awaiting_link_request' ? 'link_sent' : stage,
       };
@@ -69,8 +69,8 @@ export function buildMindsetActionPlan(
 
     case 'used':
       return {
-        message: 'Nice! How did that first mental rep feel?',
-        nextStage: 'awaiting_feedback',
+        message: 'nice, glad you gave it a try!',
+        nextStage: 'completed',
       };
 
     case 'rep_not_yet':
@@ -78,20 +78,20 @@ export function buildMindsetActionPlan(
 
     case 'feedback_positive':
       return {
-        message: 'Love that. Keep going, and let me know how the next few sessions feel.',
+        message: 'love to hear that!',
         nextStage: 'completed',
       };
 
     case 'feedback_unsure':
       return {
-        message: 'That is fair. What would you need to experience to know whether it is useful?',
-        nextStage: 'ai_follow_up',
+        message: 'totally fair, appreciate you giving it a try',
+        nextStage: 'completed',
       };
 
     case 'feedback_negative':
       return {
-        message: 'Thanks for being honest. What felt wrong or unhelpful?',
-        nextStage: 'ai_follow_up',
+        message: 'thanks for being honest, appreciate the feedback',
+        nextStage: 'completed',
       };
 
     case 'offer_not_started':
