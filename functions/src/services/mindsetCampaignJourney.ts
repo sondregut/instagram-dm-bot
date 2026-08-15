@@ -34,7 +34,7 @@ export const DEFAULT_MINDSET_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
   followUps: {
     noClick: {
       enabled: true,
-      delayMinutes: 30,
+      delayMinutes: 8 * 60,
       message: MINDSET_NO_CLICK_FOLLOW_UP_MESSAGE,
     },
     downloadCheck: {
@@ -44,7 +44,7 @@ export const DEFAULT_MINDSET_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
     },
     useCheck: {
       enabled: true,
-      delayMinutes: 45,
+      delayMinutes: 8 * 60,
       message: 'hi, just curious what you think of the app so far if you’ve had a chance to try it yet',
     },
     feedbackCheck: {
@@ -64,7 +64,7 @@ export const DEFAULT_VAULT_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
   followUps: {
     noClick: {
       enabled: true,
-      delayMinutes: 30,
+      delayMinutes: 8 * 60,
       message: 'hi, just curious what you think of Vault so far if you’ve had a chance to try it yet',
     },
     downloadCheck: {
@@ -74,7 +74,7 @@ export const DEFAULT_VAULT_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
     },
     useCheck: {
       enabled: true,
-      delayMinutes: 45,
+      delayMinutes: 8 * 60,
       message: 'hi, just curious what you think of Vault so far if you’ve had a chance to try it yet',
     },
     feedbackCheck: {

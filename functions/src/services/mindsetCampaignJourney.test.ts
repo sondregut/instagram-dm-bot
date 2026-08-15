@@ -21,6 +21,8 @@ test('normalizes legacy campaigns to the complete default journey', () => {
     DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps.noClick.message,
     'hi, just curious what you think of the app so far if you’ve had a chance to try it yet'
   );
+  assert.equal(DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps.noClick.delayMinutes, 8 * 60);
+  assert.equal(DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps.useCheck.delayMinutes, 8 * 60);
   assert.equal(
     DEFAULT_MINDSET_CAMPAIGN_JOURNEY.linkMessage,
     'here you go! hope you like it'
@@ -57,6 +59,8 @@ test('provides an isolated Vault journey with the exact requested handoff link',
   assert.match(journey.openingMessage, /download Vault/i);
   assert.match(journey.openingMessage, /reply link/i);
   assert.doesNotMatch(JSON.stringify(journey), /Athlete Mindset|mental rep/i);
+  assert.equal(journey.followUps.noClick.delayMinutes, 8 * 60);
+  assert.equal(journey.followUps.useCheck.delayMinutes, 8 * 60);
   assert.deepEqual(
     validateMindsetCampaignJourney(journey, 'vault_tracker_download'),
     []
