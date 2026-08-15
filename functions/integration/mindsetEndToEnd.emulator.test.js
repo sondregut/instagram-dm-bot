@@ -75,12 +75,16 @@ const {
   recordMindsetConversionEvent,
   recordMindsetDownloadClick,
 } = require('../lib/handlers/mindsetHandler');
-const { DEFAULT_MINDSET_CAMPAIGN_JOURNEY } = require('../lib/services/mindsetCampaignJourney');
+const {
+  DEFAULT_MINDSET_CAMPAIGN_JOURNEY,
+  DEFAULT_VAULT_CAMPAIGN_JOURNEY,
+} = require('../lib/services/mindsetCampaignJourney');
 const { buildMindsetConversationId } = require('../lib/services/mindsetConversationIsolation');
 
 const ownerUserId = 'owner-e2e';
 const accountId = 'account-e2e';
 const campaignId = 'campaign-e2e';
+const vaultCampaignId = 'vault-campaign-e2e';
 const account = {
   id: accountId,
   userId: ownerUserId,
@@ -215,6 +219,20 @@ test('runs the protected comment, DM, tracking, AI, isolation, and follow-up jou
     publicReplyText: 'Sent it. Check your DMs!',
     journey: DEFAULT_MINDSET_CAMPAIGN_JOURNEY,
     template: 'athlete_mindset_download',
+  });
+  await db.collection('mindset_campaigns').doc(vaultCampaignId).set({
+    id: vaultCampaignId,
+    ownerUserId,
+    accountId,
+    name: 'Vault download test',
+    keyword: 'VAULT',
+    postIds: [],
+    postMode: 'any',
+    status: 'test',
+    publicReplyEnabled: true,
+    publicReplyText: 'Sent the Vault link. Check your DMs!',
+    journey: DEFAULT_VAULT_CAMPAIGN_JOURNEY,
+    template: 'vault_tracker_download',
   });
 
   const userOne = 'ig-user-one';
@@ -607,6 +625,84 @@ test('runs the protected comment, DM, tracking, AI, isolation, and follow-up jou
   await handleMindsetMessage(message(userReplyLead.data.instagramUserId, 'Can you explain the app?'), account);
   assert.equal((await pendingBeforeReply.get()).data().status, 'cancelled');
 
+  const crossProductUser = 'ig-cross-product';
+  await handleMindsetComment(
+    comment('comment-cross-product-mindset', crossProductUser, 'ADMINTEST123 OLD_PRODUCT_ONLY'),
+    account
+  );
+  let crossProductLead = await leadFor(crossProductUser);
+  const mindsetSessionId = crossProductLead.data.campaignSessionId;
+  const mindsetToken = crossProductLead.data.linkToken;
+  await handleMindsetMessage(
+    quickReply(crossProductUser, `mindset:send_link:${mindsetToken}`),
+    account
+  );
+  const oldReminderRef = db.collection('mindset_followups')
+    .doc(followUpId(crossProductLead.id, 'link_reminder'));
+  assert.equal((await oldReminderRef.get()).data().status, 'pending');
+
+  const vaultCommentStart = outbound.length;
+  await handleMindsetComment(
+    comment('comment-cross-product-vault', crossProductUser, 'VAULT'),
+    account
+  );
+  assert.equal(outbound[vaultCommentStart].kind, 'private_reply');
+  assert.match(outbound[vaultCommentStart].message, /download Vault/i);
+  crossProductLead = await leadFor(crossProductUser);
+  assert.equal(crossProductLead.data.campaignTemplate, 'vault_tracker_download');
+  assert.equal(crossProductLead.data.campaignId, vaultCampaignId);
+  assert.notEqual(crossProductLead.data.campaignSessionId, mindsetSessionId);
+  assert.equal((await oldReminderRef.get()).data().status, 'cancelled');
+
+  const staleButtonStart = outbound.length;
+  await handleMindsetMessage(
+    quickReply(crossProductUser, `mindset:send_link:${mindsetToken}`),
+    account
+  );
+  assert.equal(outbound.length, staleButtonStart, 'an older product button sent a link');
+
+  const vaultLinkStart = outbound.length;
+  await handleMindsetMessage(
+    quickReply(crossProductUser, `mindset:send_link:${crossProductLead.data.linkToken}`),
+    account
+  );
+  assert.deepEqual(
+    outbound.slice(vaultLinkStart).map((item) => item.message),
+    ['here you go! hope you like it', 'https://stavhopp.no/get?src=instagram']
+  );
+  const vaultReminder = await oldReminderRef.get();
+  assert.equal(vaultReminder.data().status, 'pending');
+  assert.equal(vaultReminder.data().campaignSessionId, crossProductLead.data.campaignSessionId);
+
+  const vaultResendStart = outbound.length;
+  const aiBeforeVaultResend = aiRequests.length;
+  await handleMindsetMessage(message(crossProductUser, "i didn't get it"), account);
+  assert.deepEqual(
+    outbound.slice(vaultResendStart).map((item) => item.message),
+    ['here you go! hope you like it', 'https://stavhopp.no/get?src=instagram']
+  );
+  assert.equal(aiRequests.length, aiBeforeVaultResend);
+
+  const vaultAIStart = aiRequests.length;
+  await handleMindsetMessage(message(crossProductUser, 'How do I add a pole in Vault?'), account);
+  const vaultAIRequests = aiRequests.slice(vaultAIStart);
+  assert.ok(vaultAIRequests.length >= 2);
+  assert.match(vaultAIRequests.at(-1).systemPrompt, /CANONICAL VAULT PRODUCT GUIDE/);
+  assert.doesNotMatch(
+    vaultAIRequests.at(-1).history.map((entry) => entry.content).join(' '),
+    /OLD_PRODUCT_ONLY/
+  );
+
+  const staleFollowUpStart = outbound.length;
+  await oldReminderRef.set({
+    status: 'pending',
+    campaignSessionId: mindsetSessionId,
+    dueAt: admin.firestore.Timestamp.fromMillis(Date.now() - 1_000),
+  }, { merge: true });
+  await processMindsetFollowUps();
+  assert.equal(outbound.length, staleFollowUpStart, 'an older product follow-up was sent');
+  assert.equal((await oldReminderRef.get()).data().status, 'cancelled_isolation_violation');
+
   failPrivateReply = true;
   const publicRepliesBeforeFailure = outbound.filter((item) => item.kind === 'public_reply').length;
   await assert.rejects(
@@ -638,5 +734,6 @@ test('runs the protected comment, DM, tracking, AI, isolation, and follow-up jou
   }
   assert.equal((await db.collection('accounts').doc(accountId).get()).exists, true);
   assert.equal((await db.collection('mindset_campaigns').doc(campaignId).get()).exists, true);
+  assert.equal((await db.collection('mindset_campaigns').doc(vaultCampaignId).get()).exists, true);
   assert.equal((await db.collection('conversations').doc('other-conversation').get()).exists, true);
 });

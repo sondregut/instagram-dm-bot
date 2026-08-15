@@ -59,6 +59,10 @@ import {
   MindsetCampaignJourney,
   normalizeMindsetCampaignJourney,
 } from '../services/mindsetCampaignJourney';
+import {
+  MindsetCampaignTemplate,
+  normalizeMindsetCampaignTemplate,
+} from '../services/mindsetCampaignProduct';
 
 const LEADS = 'mindset_leads';
 const COMMENT_EVENTS = 'mindset_comment_events';
@@ -94,6 +98,8 @@ interface MindsetLead {
   initialMediaId: string;
   campaignId?: string;
   campaignName?: string;
+  campaignTemplate?: MindsetCampaignTemplate;
+  campaignSessionId?: string;
   campaignJourney?: MindsetCampaignJourney;
   triggerKeyword: string;
   linkToken: string;
@@ -125,6 +131,7 @@ interface MindsetLead {
     at: admin.firestore.Timestamp;
     source?: 'automation' | 'human';
     conversationId?: string;
+    campaignSessionId?: string;
   }>;
   createdAt: admin.firestore.Timestamp;
   updatedAt: admin.firestore.Timestamp;
@@ -157,8 +164,24 @@ function isAllowedAccount(account: InstagramAccount): boolean {
   return isMindsetAccountAllowed(account);
 }
 
-function journeyForLead(lead: Pick<MindsetLead, 'campaignJourney'>): MindsetCampaignJourney {
-  return normalizeMindsetCampaignJourney(lead.campaignJourney);
+function templateForLead(lead: Pick<MindsetLead, 'campaignTemplate'>): MindsetCampaignTemplate {
+  return normalizeMindsetCampaignTemplate(lead.campaignTemplate);
+}
+
+function journeyForLead(
+  lead: Pick<MindsetLead, 'campaignJourney' | 'campaignTemplate'>
+): MindsetCampaignJourney {
+  return normalizeMindsetCampaignJourney(lead.campaignJourney, templateForLead(lead));
+}
+
+function isHistoryEntryInActiveCampaignSession(
+  entry: NonNullable<MindsetLead['history']>[number],
+  lead: MindsetLead
+): boolean {
+  if (!isMindsetHistoryEntryInConversation(entry, lead.id)) return false;
+  return lead.campaignSessionId
+    ? entry.campaignSessionId === lead.campaignSessionId
+    : true;
 }
 
 async function claimCommentEvent(eventId: string, accountId: string): Promise<boolean> {
@@ -224,6 +247,9 @@ export async function handleMindsetComment(
           content: `[Comment] ${event.text.substring(0, 200)}`,
           at: now,
           conversationId: id,
+          ...(existingLead.campaignSessionId
+            ? { campaignSessionId: existingLead.campaignSessionId }
+            : {}),
         }),
         updatedAt: now,
       }, { merge: true }),
@@ -240,11 +266,11 @@ export async function handleMindsetComment(
     console.log('[Mindset] Keyword comment recorded without a reply because the conversation is human-owned');
     return true;
   }
-  const linkToken = existingLead?.linkToken || randomUUID();
-  const stage: MindsetStage = existingLead && CLOSED_FUNNEL_STAGES.has(existingLead.stage)
-    ? existingLead.stage
-    : 'awaiting_link_request';
-  const campaignJourney = normalizeMindsetCampaignJourney(campaign.journey);
+  const linkToken = randomUUID();
+  const campaignSessionId = randomUUID();
+  const stage: MindsetStage = 'awaiting_link_request';
+  const campaignTemplate = normalizeMindsetCampaignTemplate(campaign.template);
+  const campaignJourney = normalizeMindsetCampaignJourney(campaign.journey, campaignTemplate);
   const privateMessage = campaignJourney.openingMessage;
 
   await ref.set({
@@ -257,20 +283,41 @@ export async function handleMindsetComment(
     initialMediaId: event.media.id,
     campaignId: campaign.id,
     campaignName: campaign.name,
+    campaignTemplate,
+    campaignSessionId,
     campaignJourney,
     triggerKeyword: campaign.keyword,
     linkToken,
     stage,
+    automationPaused: false,
+    automationPausedAt: admin.firestore.FieldValue.delete(),
+    stageBeforeHandoff: admin.firestore.FieldValue.delete(),
     unansweredFollowUpCount: 0,
+    lastAutomatedFollowUpAt: admin.firestore.FieldValue.delete(),
+    feedbackReason: admin.firestore.FieldValue.delete(),
+    downloadClickedAt: admin.firestore.FieldValue.delete(),
+    activationLinkClickedAt: admin.firestore.FieldValue.delete(),
+    appOpenedAt: admin.firestore.FieldValue.delete(),
+    firstRepStartedAt: admin.firestore.FieldValue.delete(),
+    firstRepCompletedAt: admin.firestore.FieldValue.delete(),
+    paywallViewedAt: admin.firestore.FieldValue.delete(),
+    claimedTrialStartedAt: admin.firestore.FieldValue.delete(),
+    claimedSubscribedAt: admin.firestore.FieldValue.delete(),
+    trialStartedAt: admin.firestore.FieldValue.delete(),
+    subscribedAt: admin.firestore.FieldValue.delete(),
+    trialVerifiedAt: admin.firestore.FieldValue.delete(),
+    subscriptionVerifiedAt: admin.firestore.FieldValue.delete(),
     history: admin.firestore.FieldValue.arrayUnion({
       role: 'user',
       content: `[Comment] ${event.text.substring(0, 200)}`,
       at: now,
       conversationId: id,
+      campaignSessionId,
     }),
     createdAt: existingLead?.createdAt || now,
     updatedAt: now,
   }, { merge: true });
+  await cancelPendingFollowUps(id, 'new_campaign_session');
 
   const privateReplySent = await sendInstagramPrivateReply(
     event.id,
@@ -304,6 +351,7 @@ export async function handleMindsetComment(
         content: privateMessage,
         at: now,
         conversationId: id,
+        campaignSessionId,
       }),
       updatedAt: admin.firestore.Timestamp.now(),
     }, { merge: true }),
@@ -329,6 +377,7 @@ async function scheduleFollowUp(
     id,
     leadId: lead.id,
     accountId: lead.accountId,
+    campaignSessionId: lead.campaignSessionId || null,
     type,
     status: 'pending',
     dueAt: admin.firestore.Timestamp.fromMillis(now.toMillis() + delayMs),
@@ -361,12 +410,26 @@ async function updateLeadHistory(
   role: 'user' | 'assistant',
   content: string,
   extra: Record<string, unknown> = {},
-  source: 'automation' | 'human' = 'automation'
+  source: 'automation' | 'human' = 'automation',
+  campaignSessionId?: string
 ): Promise<void> {
   const now = admin.firestore.Timestamp.now();
   const historyEntry = role === 'assistant'
-    ? { role, content: content.substring(0, 500), at: now, source, conversationId: ref.id }
-    : { role, content: content.substring(0, 500), at: now, conversationId: ref.id };
+    ? {
+      role,
+      content: content.substring(0, 500),
+      at: now,
+      source,
+      conversationId: ref.id,
+      ...(campaignSessionId ? { campaignSessionId } : {}),
+    }
+    : {
+      role,
+      content: content.substring(0, 500),
+      at: now,
+      conversationId: ref.id,
+      ...(campaignSessionId ? { campaignSessionId } : {}),
+    };
   await ref.set({
     ...extra,
     history: admin.firestore.FieldValue.arrayUnion(historyEntry),
@@ -457,7 +520,10 @@ async function handleMindsetAction(
   const now = admin.firestore.Timestamp.now();
 
   if (action === 'send_link') {
-    if (!token || token !== lead.linkToken) throw new Error('Invalid link-request token');
+    if (!token || token !== lead.linkToken) {
+      console.log('[Mindset] Ignoring stale link-request token');
+      return;
+    }
     const journey = journeyForLead(lead);
     const nextStage = CLOSED_FUNNEL_STAGES.has(lead.stage) ? lead.stage : 'link_sent';
     const messages = [
@@ -474,7 +540,9 @@ async function handleMindsetAction(
         message,
         index === messages.length - 1
           ? { stage: nextStage, lastUserInteractionAt: now }
-          : {}
+          : {},
+        'automation',
+        lead.campaignSessionId
       );
     }
     if (!CLOSED_FUNNEL_STAGES.has(lead.stage) && journey.followUps.noClick.enabled) {
@@ -497,7 +565,11 @@ async function handleMindsetAction(
   const plan = buildMindsetActionPlan(
     action,
     lead.stage,
-    buildMindsetActivationUrl(lead.linkToken)
+    buildMindsetActivationUrl(lead.linkToken),
+    {
+      template: templateForLead(lead),
+      journey: journeyForLead(lead),
+    }
   );
   if (plan) {
     if (plan.createsHandoff) {
@@ -516,7 +588,14 @@ async function handleMindsetAction(
     if (plan.buttons) {
       const sent = await sendInstagramButtonDM(senderId, plan.message, plan.buttons, account);
       if (!sent) throw new Error(`Mindset action ${action} failed to send`);
-      await updateLeadHistory(ref, 'assistant', plan.message, updates);
+      await updateLeadHistory(
+        ref,
+        'assistant',
+        plan.message,
+        updates,
+        'automation',
+        lead.campaignSessionId
+      );
     } else {
       const messages = [plan.message, ...(plan.additionalMessages || [])].filter(Boolean);
       for (let index = 0; index < messages.length; index++) {
@@ -527,7 +606,9 @@ async function handleMindsetAction(
           ref,
           'assistant',
           message,
-          index === messages.length - 1 ? updates : {}
+          index === messages.length - 1 ? updates : {},
+          'automation',
+          lead.campaignSessionId
         );
       }
     }
@@ -604,7 +685,7 @@ export async function handleMindsetMessage(
     await updateLeadHistory(ref, 'user', `[Quick Reply] ${action}`, {
       lastUserInteractionAt: now,
       unansweredFollowUpCount: 0,
-    });
+    }, 'automation', lead.campaignSessionId);
     await cancelPendingFollowUps(lead.id, 'user_replied');
     if (lead.automationPaused || lead.stage === 'human_handoff') {
       await profileRefreshPromise;
@@ -623,7 +704,9 @@ export async function handleMindsetMessage(
       {
         lastUserInteractionAt: now,
         unansweredFollowUpCount: 0,
-      }
+      },
+      'automation',
+      lead.campaignSessionId
     );
     await cancelPendingFollowUps(lead.id, 'user_replied_with_attachment');
     if (!lead.automationPaused && lead.stage !== 'human_handoff') {
@@ -640,7 +723,7 @@ export async function handleMindsetMessage(
   await updateLeadHistory(ref, 'user', text, {
     lastUserInteractionAt: now,
     unansweredFollowUpCount: 0,
-  });
+  }, 'automation', lead.campaignSessionId);
   await cancelPendingFollowUps(lead.id, 'user_replied');
   if (lead.automationPaused || lead.stage === 'human_handoff') {
     await profileRefreshPromise;
@@ -675,13 +758,14 @@ export async function handleMindsetMessage(
       .reverse()
       .find((message) => (
         message.role === 'assistant'
-        && isMindsetHistoryEntryInConversation(message, lead.id)
+        && isHistoryEntryInActiveCampaignSession(message, lead)
       ))?.content;
     const scopeResult = await generateIsolatedAIResponseWithStatus(
       buildMindsetScopeClassifierPrompt(
         lead.stage,
         previousAssistantMessage,
-        conversationWasRecent
+        conversationWasRecent,
+        templateForLead(lead)
       ),
       [{ role: 'user', content: text }],
       {
@@ -732,14 +816,14 @@ export async function handleMindsetMessage(
   }
 
   const history = (lead.history || [])
-    .filter((message) => isMindsetHistoryEntryInConversation(message, lead.id))
+    .filter((message) => isHistoryEntryInActiveCampaignSession(message, lead))
     .slice(-8)
     .map((message) => ({
       role: message.role,
       content: message.content,
     }));
   const aiResult = await generateIsolatedAIResponseWithStatus(
-    buildMindsetAISystemPrompt(lead.stage),
+    buildMindsetAISystemPrompt(lead.stage, templateForLead(lead)),
     [...history, { role: 'user', content: text }],
     {
       maxTokens: 300,
@@ -777,7 +861,7 @@ export async function handleMindsetMessage(
   if (!sent) throw new Error('Mindset free-text response failed to send');
   await updateLeadHistory(ref, 'assistant', responseText, {
     stage: 'ai_follow_up',
-  });
+  }, 'automation', lead.campaignSessionId);
   await profileRefreshPromise;
   return true;
 }
@@ -802,7 +886,12 @@ export async function processMindsetFollowUps(): Promise<number> {
       });
       if (!claimed) continue;
 
-      const item = doc.data() as { leadId: string; accountId: string; type: FollowUpType };
+      const item = doc.data() as {
+        leadId: string;
+        accountId: string;
+        campaignSessionId?: string | null;
+        type: FollowUpType;
+      };
       const [leadSnapshot, accountSnapshot] = await Promise.all([
         db.collection(LEADS).doc(item.leadId).get(),
         db.collection('accounts').doc(item.accountId).get(),
@@ -922,7 +1011,9 @@ export async function processMindsetFollowUps(): Promise<number> {
           leadSnapshot.ref,
           'assistant',
           message,
-          nextStage ? { stage: nextStage } : {}
+          nextStage ? { stage: nextStage } : {},
+          'automation',
+          lead.campaignSessionId
         );
       }
 

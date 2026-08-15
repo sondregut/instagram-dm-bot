@@ -359,6 +359,7 @@ export interface InstagramPost {
 
 export type MindsetCampaignStatus = 'draft' | 'test' | 'live' | 'paused';
 export type MindsetCampaignPostMode = 'any' | 'specific' | 'next';
+export type MindsetCampaignTemplate = 'athlete_mindset_download' | 'vault_tracker_download';
 export type MindsetCampaignFollowUpKey = 'noClick' | 'downloadCheck' | 'useCheck' | 'feedbackCheck';
 
 export interface MindsetCampaignFollowUp {
@@ -407,7 +408,7 @@ export interface MindsetCampaign {
   publicReplyEnabled: boolean;
   publicReplyText: string;
   journey: MindsetCampaignJourney;
-  template: 'athlete_mindset_download';
+  template: MindsetCampaignTemplate;
   isSystem: boolean;
   createdAt: string | null;
   updatedAt: string | null;
@@ -423,6 +424,7 @@ export interface MindsetCampaignInput {
   status: MindsetCampaignStatus;
   publicReplyEnabled: boolean;
   publicReplyText: string;
+  template: MindsetCampaignTemplate;
   journey: MindsetCampaignJourney;
 }
 
@@ -433,6 +435,8 @@ export interface MindsetConversation {
   profilePictureUrl: string | null;
   campaignId: string | null;
   campaignName: string | null;
+  campaignTemplate?: MindsetCampaignTemplate;
+  campaignSessionId?: string | null;
   keyword: string;
   stage: MindsetConversationStage;
   feedbackReason: string | null;
@@ -441,6 +445,7 @@ export interface MindsetConversation {
     content: string;
     at: string | null;
     source?: 'automation' | 'human' | null;
+    campaignSessionId?: string | null;
   }>;
   milestones: {
     downloadClickedAt: string | null;
@@ -526,6 +531,7 @@ export interface MindsetInboxResult {
 
 export interface MindsetTestTurnInput {
   accountId: string;
+  template: MindsetCampaignTemplate;
   stage: MindsetConversationStage;
   message: string;
   quickReplyPayload?: string;

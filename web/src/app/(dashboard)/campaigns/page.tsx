@@ -37,6 +37,7 @@ import {
   MindsetCampaignJourney,
   MindsetCampaignPostMode,
   MindsetCampaignStatus,
+  MindsetCampaignTemplate,
 } from '@/lib/firebase';
 import {
   loadInstagramPosts,
@@ -50,7 +51,7 @@ import {
 } from '@/lib/mindsetPublicReplies';
 import { formatRelativeTimestamp } from '@/lib/mindsetPresentation';
 import {
-  DEFAULT_MINDSET_CAMPAIGN_JOURNEY,
+  defaultMindsetCampaignJourney,
   formatMindsetDelay,
   MINDSET_FOLLOW_UP_KEYS,
   normalizeMindsetCampaignJourney,
@@ -69,6 +70,7 @@ interface CampaignFormState {
   nextPostResolvedAt: string | null;
   publicReplyEnabled: boolean;
   publicReplyText: string;
+  template: MindsetCampaignTemplate;
   journey: MindsetCampaignJourney;
   currentStatus: MindsetCampaignStatus;
 }
@@ -84,7 +86,8 @@ function createEmptyForm(): CampaignFormState {
     nextPostResolvedAt: null,
     publicReplyEnabled: true,
     publicReplyText: DEFAULT_MINDSET_PUBLIC_REPLY_TEXT,
-    journey: normalizeMindsetCampaignJourney(DEFAULT_MINDSET_CAMPAIGN_JOURNEY),
+    template: 'athlete_mindset_download',
+    journey: normalizeMindsetCampaignJourney(undefined, 'athlete_mindset_download'),
     currentStatus: 'draft',
   };
 }
@@ -124,6 +127,7 @@ export default function CampaignsPage() {
         status,
         publicReplyEnabled: form.publicReplyEnabled,
         publicReplyText: form.publicReplyText,
+        template: form.template,
         journey: form.journey,
       });
     },
@@ -202,6 +206,7 @@ export default function CampaignsPage() {
     form.postIds,
     form.publicReplyEnabled,
     form.publicReplyText,
+    form.template,
     form.journey,
   ]);
 
@@ -232,7 +237,8 @@ export default function CampaignsPage() {
       nextPostResolvedAt: campaign.nextPostResolvedAt || null,
       publicReplyEnabled: campaign.publicReplyEnabled,
       publicReplyText: campaign.publicReplyText,
-      journey: normalizeMindsetCampaignJourney(campaign.journey),
+      template: campaign.template,
+      journey: normalizeMindsetCampaignJourney(campaign.journey, campaign.template),
       currentStatus: campaign.status,
     });
     setSaveError('');
@@ -254,7 +260,8 @@ export default function CampaignsPage() {
         status: 'paused',
         publicReplyEnabled: campaign.publicReplyEnabled,
         publicReplyText: campaign.publicReplyText,
-        journey: normalizeMindsetCampaignJourney(campaign.journey),
+        template: campaign.template,
+        journey: normalizeMindsetCampaignJourney(campaign.journey, campaign.template),
       });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['mindset-campaigns', selectedAccount.id] }),
@@ -506,7 +513,7 @@ function CampaignDetails({
 }) {
   const active = campaign.status === 'test' || campaign.status === 'live';
   const publicReplies = parseMindsetPublicReplyVariants(campaign.publicReplyText);
-  const journey = normalizeMindsetCampaignJourney(campaign.journey);
+  const journey = normalizeMindsetCampaignJourney(campaign.journey, campaign.template);
   const activeFollowUps = MINDSET_FOLLOW_UP_KEYS.filter((key) => journey.followUps[key].enabled);
   const postMode = effectiveCampaignPostMode(campaign);
   const targetPostIds = postMode === 'next'
@@ -515,7 +522,6 @@ function CampaignDetails({
   const selectedPosts = targetPostIds
     .map((postId) => posts.find((post) => post.id === postId))
     .filter((post): post is InstagramPost => Boolean(post));
-
   return (
     <article className="min-w-0 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white">
       <div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
@@ -569,6 +575,7 @@ function CampaignDetails({
           </div>
 
           <div className="mt-7 grid gap-3 sm:grid-cols-2">
+            <SummaryItem label="Product" value={campaignProductName(campaign.template)} />
             <SummaryItem label="Keyword" value={campaign.keyword} mono />
             <SummaryItem label="Post scope" value={campaignPostScopeLabel(campaign)} />
             <SummaryItem label="Public replies" value={campaign.publicReplyEnabled ? `${publicReplies.length} rotating` : 'Off'} />
@@ -652,6 +659,20 @@ function CampaignEditor({
   const selectedPosts = targetPostIds
     .map((postId) => posts.find((post) => post.id === postId))
     .filter((post): post is InstagramPost => Boolean(post));
+  const selectTemplate = (template: MindsetCampaignTemplate) => {
+    setForm((current) => {
+      if (current.template === template) return current;
+      return {
+        ...current,
+        template,
+        journey: normalizeMindsetCampaignJourney(
+          defaultMindsetCampaignJourney(template),
+          template
+        ),
+      };
+    });
+    setConfirmedSafeActivation(false);
+  };
 
   return (
     <article className="min-w-0 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_24px_70px_-55px_rgba(15,23,42,0.5)]">
@@ -672,6 +693,24 @@ function CampaignEditor({
       <div className="grid 2xl:grid-cols-[minmax(0,1fr)_350px]">
         <div className="divide-y divide-slate-200">
           <BuilderSection number="1" title="Choose the trigger" description="Name the automation, set the keyword, and choose where it runs.">
+            <fieldset className="mb-5">
+              <legend className="text-sm font-semibold text-slate-800">App to promote</legend>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                <ProductButton
+                  selected={form.template === 'athlete_mindset_download'}
+                  name="Athlete Mindset"
+                  detail="Mental training and Aomi"
+                  onClick={() => selectTemplate('athlete_mindset_download')}
+                />
+                <ProductButton
+                  selected={form.template === 'vault_tracker_download'}
+                  name="Vault"
+                  detail="Pole vault training tracker"
+                  onClick={() => selectTemplate('vault_tracker_download')}
+                />
+              </div>
+              <p className="mt-2 text-[11px] leading-5 text-slate-500">Changing the app loads its protected default link, messages, follow-ups, and Claude product context.</p>
+            </fieldset>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="block">
                 <span className="text-sm font-semibold text-slate-800">Automation name</span>
@@ -1340,6 +1379,10 @@ function mindsetDestinationHost(value: string): string {
   }
 }
 
+function campaignProductName(template: MindsetCampaignTemplate): string {
+  return template === 'vault_tracker_download' ? 'Vault' : 'Athlete Mindset';
+}
+
 function campaignPostScopeLabel(campaign: MindsetCampaign): string {
   const postMode = effectiveCampaignPostMode(campaign);
   if (postMode === 'next') return campaign.nextPostId ? 'Next post locked' : 'Next post waiting';
@@ -1397,6 +1440,16 @@ function Toggle({ enabled, onToggle, label }: { enabled: boolean; onToggle: () =
 
 function AccountAvatar({ username }: { username: string }) {
   return <span className="grid h-7 w-7 flex-shrink-0 place-items-center rounded-full bg-slate-950 text-[10px] font-bold uppercase text-white">{username.charAt(0)}</span>;
+}
+
+function ProductButton({ selected, name, detail, onClick }: { selected: boolean; name: string; detail: string; onClick: () => void }) {
+  return (
+    <button type="button" aria-pressed={selected} onClick={onClick} className={cn('flex min-w-0 items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition active:scale-[0.99]', selected ? 'border-emerald-500 bg-emerald-50 ring-1 ring-emerald-100' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50')}>
+      <span className={cn('grid h-9 w-9 flex-shrink-0 place-items-center rounded-xl text-sm font-bold', selected ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-500')}>{name.charAt(0)}</span>
+      <span className="min-w-0"><span className="block text-sm font-semibold text-slate-900">{name}</span><span className="mt-0.5 block text-[11px] text-slate-500">{detail}</span></span>
+      <span className={cn('ml-auto grid h-5 w-5 flex-shrink-0 place-items-center rounded-full border', selected ? 'border-emerald-700 bg-emerald-700 text-white' : 'border-slate-300 text-transparent')}><Check size={11} weight="bold" /></span>
+    </button>
+  );
 }
 
 function ModeButton({ selected, icon: Icon, label, detail, onClick }: { selected: boolean; icon: typeof Lightning; label: string; detail: string; onClick: () => void }) {

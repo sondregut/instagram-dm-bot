@@ -2,6 +2,7 @@ import type {
   MindsetCampaignFollowUp,
   MindsetCampaignFollowUpKey,
   MindsetCampaignJourney,
+  MindsetCampaignTemplate,
 } from './firebase';
 
 export const DEFAULT_MINDSET_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
@@ -34,6 +35,50 @@ export const DEFAULT_MINDSET_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
   },
 };
 
+export const DEFAULT_VAULT_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
+  openingMessage: "Click below to get the link to download Vault!\n\nIf you don't see the button, just reply link\n\nAppreciate you,\nSondre",
+  openingButtonText: 'Send me the link',
+  linkMessage: 'here you go! hope you like it',
+  linkButtonText: 'Download App',
+  destinationUrl: 'https://stavhopp.no/get?src=instagram',
+  followUps: {
+    noClick: {
+      enabled: true,
+      delayMinutes: 30,
+      message: 'hi, just curious what you think of Vault so far if you’ve had a chance to try it yet',
+    },
+    downloadCheck: {
+      enabled: true,
+      delayMinutes: 30,
+      message: 'Quick check, did you manage to download and open Vault?',
+    },
+    useCheck: {
+      enabled: true,
+      delayMinutes: 45,
+      message: 'hi, just curious what you think of Vault so far if you’ve had a chance to try it yet',
+    },
+    feedbackCheck: {
+      enabled: true,
+      delayMinutes: 5,
+      message: 'How did logging your first session in Vault feel?',
+    },
+  },
+};
+
+export function normalizeMindsetCampaignTemplate(value: unknown): MindsetCampaignTemplate {
+  return value === 'vault_tracker_download'
+    ? 'vault_tracker_download'
+    : 'athlete_mindset_download';
+}
+
+export function defaultMindsetCampaignJourney(
+  template: MindsetCampaignTemplate
+): MindsetCampaignJourney {
+  return template === 'vault_tracker_download'
+    ? DEFAULT_VAULT_CAMPAIGN_JOURNEY
+    : DEFAULT_MINDSET_CAMPAIGN_JOURNEY;
+}
+
 const LEGACY_OPENING_MESSAGES = new Set([
   'Click below to get the link to download Athlete Mindset!\n\nAppreciate you,\nSondre',
 ]);
@@ -58,16 +103,18 @@ function textValue(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.trim() ? value : fallback;
 }
 
-function openingMessageValue(value: unknown): string {
-  const message = textValue(value, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.openingMessage).trim();
-  return LEGACY_OPENING_MESSAGES.has(message)
+function openingMessageValue(value: unknown, fallback: string): string {
+  const message = textValue(value, fallback).trim();
+  return fallback === DEFAULT_MINDSET_CAMPAIGN_JOURNEY.openingMessage
+    && LEGACY_OPENING_MESSAGES.has(message)
     ? DEFAULT_MINDSET_CAMPAIGN_JOURNEY.openingMessage
     : message;
 }
 
-function linkMessageValue(value: unknown): string {
-  const message = textValue(value, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.linkMessage).trim();
-  return LEGACY_LINK_MESSAGES.has(message)
+function linkMessageValue(value: unknown, fallback: string): string {
+  const message = textValue(value, fallback).trim();
+  return fallback === DEFAULT_MINDSET_CAMPAIGN_JOURNEY.linkMessage
+    && LEGACY_LINK_MESSAGES.has(message)
     ? DEFAULT_MINDSET_CAMPAIGN_JOURNEY.linkMessage
     : message;
 }
@@ -89,19 +136,23 @@ function followUpValue(
   };
 }
 
-export function normalizeMindsetCampaignJourney(value?: Partial<MindsetCampaignJourney> | null): MindsetCampaignJourney {
+export function normalizeMindsetCampaignJourney(
+  value?: Partial<MindsetCampaignJourney> | null,
+  templateValue: unknown = 'athlete_mindset_download'
+): MindsetCampaignJourney {
+  const defaults = defaultMindsetCampaignJourney(normalizeMindsetCampaignTemplate(templateValue));
   const followUps = value?.followUps || {} as MindsetCampaignJourney['followUps'];
   return {
-    openingMessage: openingMessageValue(value?.openingMessage),
-    openingButtonText: textValue(value?.openingButtonText, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.openingButtonText),
-    linkMessage: linkMessageValue(value?.linkMessage),
-    linkButtonText: textValue(value?.linkButtonText, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.linkButtonText),
-    destinationUrl: textValue(value?.destinationUrl, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.destinationUrl),
+    openingMessage: openingMessageValue(value?.openingMessage, defaults.openingMessage),
+    openingButtonText: textValue(value?.openingButtonText, defaults.openingButtonText),
+    linkMessage: linkMessageValue(value?.linkMessage, defaults.linkMessage),
+    linkButtonText: textValue(value?.linkButtonText, defaults.linkButtonText),
+    destinationUrl: textValue(value?.destinationUrl, defaults.destinationUrl),
     followUps: {
-      noClick: followUpValue('noClick', followUps.noClick, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps.noClick),
-      downloadCheck: followUpValue('downloadCheck', followUps.downloadCheck, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps.downloadCheck),
-      useCheck: followUpValue('useCheck', followUps.useCheck, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps.useCheck),
-      feedbackCheck: followUpValue('feedbackCheck', followUps.feedbackCheck, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps.feedbackCheck),
+      noClick: followUpValue('noClick', followUps.noClick, defaults.followUps.noClick),
+      downloadCheck: followUpValue('downloadCheck', followUps.downloadCheck, defaults.followUps.downloadCheck),
+      useCheck: followUpValue('useCheck', followUps.useCheck, defaults.followUps.useCheck),
+      feedbackCheck: followUpValue('feedbackCheck', followUps.feedbackCheck, defaults.followUps.feedbackCheck),
     },
   };
 }

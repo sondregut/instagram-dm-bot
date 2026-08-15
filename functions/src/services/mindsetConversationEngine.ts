@@ -1,4 +1,13 @@
-import { MINDSET_DIRECT_APP_URL } from './mindsetFlowLogic';
+import { buildMindsetDirectAppUrl } from './mindsetFlowLogic';
+import {
+  MindsetCampaignJourney,
+  normalizeMindsetCampaignJourney,
+} from './mindsetCampaignJourney';
+import {
+  MindsetCampaignTemplate,
+  mindsetCampaignProduct,
+  normalizeMindsetCampaignTemplate,
+} from './mindsetCampaignProduct';
 
 export type MindsetStage =
   | 'awaiting_link_request'
@@ -38,6 +47,11 @@ export interface MindsetActionPlan {
   createsHandoff?: boolean;
 }
 
+export interface MindsetActionContext {
+  template?: MindsetCampaignTemplate;
+  journey?: MindsetCampaignJourney;
+}
+
 const repStages = new Set<MindsetStage>([
   'awaiting_activation',
   'awaiting_use_status',
@@ -51,30 +65,34 @@ const subscriptionStages = new Set<MindsetStage>([
 export function buildMindsetActionPlan(
   action: string,
   stage: MindsetStage,
-  _activationUrl: string
+  _activationUrl: string,
+  context: MindsetActionContext = {}
 ): MindsetActionPlan | null {
+  const template = normalizeMindsetCampaignTemplate(context.template);
+  const product = mindsetCampaignProduct(template);
+  const journey = normalizeMindsetCampaignJourney(context.journey, template);
   switch (action) {
     case 'app_link_request':
       return {
-        message: 'here you go! hope you like it',
-        additionalMessages: [MINDSET_DIRECT_APP_URL],
+        message: journey.linkMessage,
+        additionalMessages: [buildMindsetDirectAppUrl(journey.destinationUrl)],
         nextStage: stage === 'awaiting_link_request' ? 'link_sent' : stage,
       };
 
     case 'downloaded':
       return {
-        message: 'Awesome, excited to hear what you think about it.',
+        message: product.copy.downloaded,
         nextStage: 'awaiting_use_status',
       };
 
     case 'used':
       return {
-        message: 'nice, glad you gave it a try!',
+        message: product.copy.used,
         nextStage: 'completed',
       };
 
     case 'rep_not_yet':
-      return firstRepBlockerPlan();
+      return productBlockerPlan(product.name);
 
     case 'feedback_positive':
       return {
@@ -106,7 +124,7 @@ export function buildMindsetActionPlan(
     case 'objection_price':
     case 'price_objection':
       return {
-        message: 'That makes sense. Price matters. The App Store shows the current offer. What would Athlete Mindset need to help with for it to feel worthwhile?',
+        message: product.copy.priceObjection,
         nextStage: 'ai_follow_up',
         feedbackReason: 'Price',
       };
@@ -132,21 +150,21 @@ export function buildMindsetActionPlan(
 
     case 'onboarding_help':
       return {
-        message: 'What would help most: building a routine, choosing a training session, or using Aomi?',
+        message: product.copy.onboardingHelp,
         nextStage: 'ai_follow_up',
       };
 
     case 'complete':
       return {
-        message: 'Perfect. Enjoy the app, and message anytime if you get stuck.',
+        message: product.copy.complete,
         nextStage: 'completed',
       };
 
     case 'not_yet':
-      if (repStages.has(stage)) return firstRepBlockerPlan();
+      if (repStages.has(stage)) return productBlockerPlan(product.name);
       if (subscriptionStages.has(stage)) return subscriptionBlockerPlan();
       return {
-        message: 'What stopped you from downloading or opening the app?',
+        message: product.copy.notYet,
         nextStage: 'ai_follow_up',
       };
 
@@ -170,7 +188,7 @@ export function buildMindsetActionPlan(
 
     case 'reason_navigation':
       return {
-        message: "During setup, keep going until the mental-rep preview. If you already have access, open Home and tap Today's Mental Rep. What screen are you on?",
+        message: product.copy.navigation,
         nextStage: 'awaiting_use_status',
         feedbackReason: 'Could not find the first rep',
       };
@@ -191,7 +209,7 @@ export function buildMindsetActionPlan(
 
     case 'reason_no_time':
       return {
-        message: 'Understood. When would be a realistic time for you to try the first rep?',
+        message: product.copy.noTime,
         nextStage: 'ai_follow_up',
         feedbackReason: 'No time yet',
       };
@@ -208,9 +226,11 @@ export function buildMindsetActionPlan(
   }
 }
 
-function firstRepBlockerPlan(): MindsetActionPlan {
+function productBlockerPlan(productName: string): MindsetActionPlan {
   return {
-    message: 'What got in the way of trying your first mental rep?',
+    message: productName === 'Athlete Mindset'
+      ? 'What got in the way of trying your first mental rep?'
+      : `What got in the way of trying ${productName}?`,
     nextStage: 'ai_follow_up',
   };
 }

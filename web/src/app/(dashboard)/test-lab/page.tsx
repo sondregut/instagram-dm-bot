@@ -15,6 +15,7 @@ import {
 import { useAccount } from '@/components/AccountSelector';
 import {
   MindsetConversationStage,
+  MindsetCampaignTemplate,
   MindsetTestTurnResult,
 } from '@/lib/firebase';
 import { simulateMindsetConversation } from '@/lib/mindsetData';
@@ -56,6 +57,7 @@ const scenarios = [
 
 export default function TestLabPage() {
   const { selectedAccount, accounts, isLoading: accountsLoading } = useAccount();
+  const [template, setTemplate] = useState<MindsetCampaignTemplate>('athlete_mindset_download');
   const [stage, setStage] = useState<MindsetConversationStage>('awaiting_download_status');
   const [draft, setDraft] = useState('');
   const [transcript, setTranscript] = useState<LabMessage[]>([]);
@@ -63,6 +65,7 @@ export default function TestLabPage() {
   const mutation = useMutation({
     mutationFn: ({ message }: LabTurn) => simulateMindsetConversation({
       accountId: selectedAccount!.id,
+      template,
       stage,
       message,
       history: transcript,
@@ -114,7 +117,7 @@ export default function TestLabPage() {
             Safe conversation testing
           </div>
           <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em] text-slate-950">Test Lab</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Try realistic messages against the Athlete Mindset conversation flow. Nothing here sends an Instagram DM or changes a real conversation.</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Try realistic messages against either app journey. Nothing here sends an Instagram DM or changes a real conversation.</p>
         </div>
         <button type="button" onClick={reset} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:border-slate-400 active:scale-[0.98]">
           <ArrowCounterClockwise size={17} />
@@ -124,8 +127,23 @@ export default function TestLabPage() {
 
       <section className="grid min-h-[650px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_24px_70px_-52px_rgba(15,23,42,0.5)] xl:grid-cols-[minmax(0,1fr)_330px]">
         <div className="flex min-h-[650px] min-w-0 flex-col">
-          <div className="border-b border-slate-200 px-5 py-4">
-            <label className="block max-w-sm">
+          <div className="grid gap-4 border-b border-slate-200 px-5 py-4 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-xs font-semibold text-slate-700">App journey</span>
+              <select
+                value={template}
+                onChange={(event) => {
+                  setTemplate(event.target.value as MindsetCampaignTemplate);
+                  setTranscript([]);
+                  setLastResult(null);
+                }}
+                className="mt-2 h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-900 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
+              >
+                <option value="athlete_mindset_download">Athlete Mindset</option>
+                <option value="vault_tracker_download">Vault</option>
+              </select>
+            </label>
+            <label className="block">
               <span className="text-xs font-semibold text-slate-700">Starting conversation stage</span>
               <select
                 value={stage}
@@ -154,7 +172,7 @@ export default function TestLabPage() {
                 <div key={`${index}-${message.content}`} className={cn('flex gap-2.5', assistant ? 'justify-end' : 'justify-start')}>
                   {!assistant && <span className="mt-auto grid h-8 w-8 place-items-center rounded-full border border-slate-200 bg-white text-slate-500"><UserCircle size={18} weight="fill" /></span>}
                   <div className={cn('max-w-[82%] sm:max-w-[70%]', assistant && 'text-right')}>
-                    <p className="mb-1 px-1 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{assistant ? 'Athlete Mindset' : 'Test athlete'}</p>
+                    <p className="mb-1 px-1 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{assistant ? template === 'vault_tracker_download' ? 'Vault' : 'Athlete Mindset' : 'Test athlete'}</p>
                     <p className={cn('inline-block rounded-2xl px-3.5 py-2.5 text-left text-sm leading-6 shadow-sm', assistant ? 'rounded-br-md bg-emerald-700 text-white' : 'rounded-bl-md border border-slate-200 bg-white text-slate-800')}>{message.content}</p>
                   </div>
                   {assistant && <span className="mt-auto grid h-8 w-8 place-items-center rounded-full bg-slate-950 text-emerald-300"><Robot size={17} weight="fill" /></span>}

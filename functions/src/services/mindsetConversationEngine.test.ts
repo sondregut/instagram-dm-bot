@@ -23,6 +23,35 @@ test('sends a requested app link as its own real message', () => {
   assert.equal(plan.buttons, undefined);
 });
 
+test('keeps Vault link delivery and replies product-specific', () => {
+  const context = { template: 'vault_tracker_download' as const };
+  const linkPlan = buildMindsetActionPlan(
+    'app_link_request',
+    'awaiting_link_request',
+    activationUrl,
+    context
+  );
+  assert.ok(linkPlan);
+  assert.equal(linkPlan.message, 'here you go! hope you like it');
+  assert.deepEqual(linkPlan.additionalMessages, ['https://stavhopp.no/get?src=instagram']);
+  assert.equal(linkPlan.nextStage, 'link_sent');
+
+  const downloadedPlan = buildMindsetActionPlan(
+    'downloaded',
+    'awaiting_download_status',
+    activationUrl,
+    context
+  );
+  assert.ok(downloadedPlan);
+  assert.equal(downloadedPlan.message, 'awesome, excited to hear what you think about Vault');
+  assert.doesNotMatch(downloadedPlan.message, /Athlete Mindset|mental rep/i);
+
+  const usedPlan = buildMindsetActionPlan('used', 'awaiting_use_status', activationUrl, context);
+  assert.ok(usedPlan);
+  assert.equal(usedPlan.nextStage, 'completed');
+  assert.doesNotMatch(usedPlan.message, /\?/);
+});
+
 const intentCases: Array<[string, ReturnType<typeof classifyMindsetReply>]> = [
   ["I didn't use it", 'not_yet'],
   ['I didn’t use it', 'not_yet'],

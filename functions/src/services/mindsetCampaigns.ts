@@ -24,6 +24,10 @@ import {
   MindsetCampaignJourney,
   normalizeMindsetCampaignJourney,
 } from './mindsetCampaignJourney';
+import {
+  MindsetCampaignTemplate,
+  normalizeMindsetCampaignTemplate,
+} from './mindsetCampaignProduct';
 
 export const MINDSET_CAMPAIGNS_COLLECTION = 'mindset_campaigns';
 export const MINDSET_NEXT_POST_LOCKS_COLLECTION = 'mindset_campaign_next_post_locks';
@@ -45,7 +49,7 @@ export interface MindsetCampaign {
   publicReplyEnabled: boolean;
   publicReplyText: string;
   journey: MindsetCampaignJourney;
-  template: 'athlete_mindset_download';
+  template: MindsetCampaignTemplate;
   isSystem?: boolean;
   createdAt?: admin.firestore.Timestamp;
   updatedAt?: admin.firestore.Timestamp;
@@ -106,12 +110,14 @@ export async function getStoredMindsetCampaigns(accountId: string): Promise<Mind
     const postIds = Array.isArray(data.postIds)
       ? data.postIds.filter((value): value is string => typeof value === 'string')
       : [];
+    const template = normalizeMindsetCampaignTemplate(data.template);
     return {
       ...data,
       id: doc.id,
       postIds,
+      template,
       postMode: normalizeMindsetCampaignPostMode({ postIds, postMode: data.postMode }),
-      journey: normalizeMindsetCampaignJourney(data.journey),
+      journey: normalizeMindsetCampaignJourney(data.journey, template),
       nextPostBaselineIds: Array.isArray(data.nextPostBaselineIds)
         ? data.nextPostBaselineIds.filter((value): value is string => typeof value === 'string')
         : undefined,
@@ -130,7 +136,7 @@ export function shouldIncludeRuntimeMindsetCampaign(
   campaigns: MindsetCampaign[],
   mode: string
 ): boolean {
-  return shouldUseRuntimeCampaign(campaigns, mode);
+  return shouldUseRuntimeCampaign(campaigns, mode, getConfiguredMindsetKeyword());
 }
 
 async function lockNextPostCampaign(
@@ -272,12 +278,13 @@ export async function resolveMindsetCampaignForComment(
     if (campaignTargetsPost(campaign, postId)) return campaign;
   }
 
-  // Once the owner activates any stored campaign, it becomes the full source
-  // of truth. Do not leave the environment fallback active on broader posts.
-  if (activeStoredCampaigns.length > 0) return null;
-
   const fallback = runtimeMindsetCampaign(account);
+  const runtimeKeywordClaimedByStoredCampaign = fallback && activeStoredCampaigns.some(
+    (campaign) => normalizeMindsetCampaignKeyword(campaign.keyword)
+      === normalizeMindsetCampaignKeyword(fallback.keyword)
+  );
   return fallback
+    && !runtimeKeywordClaimedByStoredCampaign
     && campaignTargetsPost(fallback, postId)
     && containsConfiguredMindsetKeyword(commentText, fallback.keyword)
     ? fallback

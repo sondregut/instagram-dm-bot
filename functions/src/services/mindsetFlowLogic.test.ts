@@ -394,6 +394,26 @@ test('feeds the canonical app journey and navigation rules to Claude', () => {
   assert.match(subscribedPrompt, /never ask whether they subscribed/i);
 });
 
+test('feeds Claude only the Vault guide for a Vault campaign', () => {
+  const prompt = buildMindsetAISystemPrompt('awaiting_use_status', 'vault_tracker_download');
+  assert.match(prompt, /CANONICAL VAULT PRODUCT GUIDE/);
+  assert.match(prompt, /log training and competition sessions/i);
+  assert.match(prompt, /jumps, poles, grip height, approach steps, mid-mark/i);
+  assert.match(prompt, /must not give pole-vault technique, equipment-selection, medical, or injury advice/i);
+  assert.match(prompt, /another product campaign/i);
+  assert.doesNotMatch(prompt, /Home, Training, Progress, and Profile/);
+  assert.doesNotMatch(prompt, /Instagram assistant is not Aomi/i);
+
+  const classifier = buildMindsetScopeClassifierPrompt(
+    'ai_follow_up',
+    'here you go! hope you like it',
+    true,
+    'vault_tracker_download'
+  );
+  assert.match(classifier, /Vault/);
+  assert.match(classifier, /which pole or grip to use/i);
+});
+
 test('recognizes Claude multilingual handoff controls without exposing them', () => {
   assert.equal(mindsetAIControlAction('[[HANDOFF]]'), 'handoff');
   assert.equal(mindsetAIControlAction(' [[ handoff ]]\nDo not send this text'), 'handoff');

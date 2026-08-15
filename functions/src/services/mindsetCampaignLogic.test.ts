@@ -44,10 +44,19 @@ test('requires an explicit production mode before a campaign can go live', () =>
   assert.equal(isCampaignStatusActive('test', 'test'), true);
 });
 
-test('disables the environment fallback when a stored campaign becomes active', () => {
-  assert.equal(shouldUseRuntimeCampaign([{ status: 'draft' }], 'test'), true);
-  assert.equal(shouldUseRuntimeCampaign([{ status: 'test' }], 'test'), false);
-  assert.equal(shouldUseRuntimeCampaign([{ status: 'live' }], 'mindset'), false);
+test('only disables the environment fallback when an active campaign claims its keyword', () => {
+  assert.equal(shouldUseRuntimeCampaign([
+    { status: 'draft', keyword: 'MINDSET' },
+  ], 'test', 'MINDSET'), true);
+  assert.equal(shouldUseRuntimeCampaign([
+    { status: 'test', keyword: 'VAULT' },
+  ], 'test', 'MINDSET'), true);
+  assert.equal(shouldUseRuntimeCampaign([
+    { status: 'test', keyword: 'MINDSET' },
+  ], 'test', 'MINDSET'), false);
+  assert.equal(shouldUseRuntimeCampaign([
+    { status: 'live', keyword: 'MINDSET' },
+  ], 'mindset', 'MINDSET'), false);
 });
 
 test('matches all posts for an empty target list and exact posts otherwise', () => {

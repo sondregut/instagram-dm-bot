@@ -1,4 +1,8 @@
 import { validateMindsetCampaignJourney } from './mindsetCampaignJourney';
+import {
+  MindsetCampaignTemplate,
+  normalizeMindsetCampaignTemplate,
+} from './mindsetCampaignProduct';
 
 export type MindsetCampaignStatus = 'draft' | 'test' | 'live' | 'paused';
 export type MindsetCampaignPostMode = 'any' | 'specific' | 'next';
@@ -13,6 +17,7 @@ export interface MindsetCampaignMatchInput {
 
 export interface MindsetCampaignValidationInput extends MindsetCampaignMatchInput {
   name: string;
+  template?: MindsetCampaignTemplate;
   publicReplyEnabled?: boolean;
   publicReplyText?: string;
   journey?: unknown;
@@ -74,7 +79,10 @@ export function validateMindsetCampaignInput(
   }
 
   if (input.journey !== undefined) {
-    errors.push(...validateMindsetCampaignJourney(input.journey));
+    errors.push(...validateMindsetCampaignJourney(
+      input.journey,
+      normalizeMindsetCampaignTemplate(input.template)
+    ));
   }
 
   if (input.status === 'test' && keyword === 'MINDSET') {
@@ -100,10 +108,15 @@ export function isCampaignStatusActive(status: MindsetCampaignStatus, mode: stri
 }
 
 export function shouldUseRuntimeCampaign(
-  campaigns: Array<Pick<MindsetCampaignMatchInput, 'status'>>,
-  mode: string
+  campaigns: Array<Pick<MindsetCampaignMatchInput, 'status' | 'keyword'>>,
+  mode: string,
+  runtimeKeyword: string
 ): boolean {
-  return !campaigns.some((campaign) => isCampaignStatusActive(campaign.status, mode));
+  const normalizedRuntimeKeyword = normalizeMindsetCampaignKeyword(runtimeKeyword);
+  return !campaigns.some((campaign) => (
+    isCampaignStatusActive(campaign.status, mode)
+    && normalizeMindsetCampaignKeyword(campaign.keyword) === normalizedRuntimeKeyword
+  ));
 }
 
 export function campaignTargetsPost(

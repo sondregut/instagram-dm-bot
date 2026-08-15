@@ -3,6 +3,7 @@ export interface MindsetConversationIdentityRecord {
   accountId?: unknown;
   ownerUserId?: unknown;
   instagramUserId?: unknown;
+  campaignSessionId?: unknown;
 }
 
 export interface MindsetConversationIdentityExpectation {
@@ -88,7 +89,7 @@ export function isMindsetConversationRecordSelfConsistent(
 }
 
 export function isMindsetFollowUpIdentityMatch(
-  followUp: { leadId?: unknown; accountId?: unknown },
+  followUp: { leadId?: unknown; accountId?: unknown; campaignSessionId?: unknown },
   leadDocumentId: string,
   lead: MindsetConversationIdentityRecord,
   expectedAccountId: string,
@@ -96,6 +97,10 @@ export function isMindsetFollowUpIdentityMatch(
 ): boolean {
   if (followUp.leadId !== leadDocumentId
       || followUp.accountId !== expectedAccountId) {
+    return false;
+  }
+  if (nonEmptyString(lead.campaignSessionId)
+      && followUp.campaignSessionId !== lead.campaignSessionId) {
     return false;
   }
   if (!nonEmptyString(lead.instagramUserId)) return false;

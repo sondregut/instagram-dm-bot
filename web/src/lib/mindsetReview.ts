@@ -311,7 +311,10 @@ function readStoredReviewCampaigns(): MindsetCampaign[] {
         nextPostResolvedAt: campaign.nextPostResolvedAt || null,
         publicReplyEnabled: campaign.publicReplyEnabled !== false,
         publicReplyText: campaign.publicReplyText || DEFAULT_MINDSET_PUBLIC_REPLY_TEXT,
-        journey: normalizeMindsetCampaignJourney(campaign.journey),
+        template: campaign.template === 'vault_tracker_download'
+          ? 'vault_tracker_download'
+          : 'athlete_mindset_download',
+        journey: normalizeMindsetCampaignJourney(campaign.journey, campaign.template),
       }));
   } catch {
     return initialCustomCampaigns;
@@ -502,8 +505,8 @@ export async function saveReviewCampaign(input: MindsetCampaignInput): Promise<M
     status: input.status,
     publicReplyEnabled: input.publicReplyEnabled,
     publicReplyText: input.publicReplyText.trim(),
-    journey: normalizeMindsetCampaignJourney(input.journey),
-    template: 'athlete_mindset_download',
+    journey: normalizeMindsetCampaignJourney(input.journey, input.template),
+    template: input.template,
     isSystem: false,
     createdAt: existing?.createdAt || now,
     updatedAt: now,

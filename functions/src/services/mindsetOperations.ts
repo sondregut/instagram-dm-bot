@@ -41,6 +41,10 @@ import {
   isMindsetHistoryEntryInConversation,
 } from './mindsetConversationIsolation';
 import { normalizeMindsetCampaignJourney } from './mindsetCampaignJourney';
+import {
+  MindsetCampaignTemplate,
+  normalizeMindsetCampaignTemplate,
+} from './mindsetCampaignProduct';
 
 const LEADS = 'mindset_leads';
 const FOLLOWUPS = 'mindset_followups';
@@ -78,6 +82,7 @@ interface MindsetHistoryEntry {
   at?: admin.firestore.Timestamp;
   source?: 'automation' | 'human';
   conversationId?: string;
+  campaignSessionId?: string;
 }
 
 interface MindsetLeadRecord {
@@ -89,6 +94,8 @@ interface MindsetLeadRecord {
   profilePictureUrl?: string | null;
   campaignId?: string;
   campaignName?: string;
+  campaignTemplate?: MindsetCampaignTemplate;
+  campaignSessionId?: string;
   triggerKeyword?: string;
   stage?: MindsetStage;
   feedbackReason?: string;
@@ -349,6 +356,7 @@ async function loadMindsetInboxPage(
 
 function serializeCampaign(campaign: MindsetCampaign) {
   const postMode = normalizeMindsetCampaignPostMode(campaign);
+  const template = normalizeMindsetCampaignTemplate(campaign.template);
   return {
     id: campaign.id,
     name: campaign.name,
@@ -361,8 +369,8 @@ function serializeCampaign(campaign: MindsetCampaign) {
     status: campaign.status,
     publicReplyEnabled: campaign.publicReplyEnabled !== false,
     publicReplyText: campaign.publicReplyText || DEFAULT_MINDSET_PUBLIC_REPLY_TEXT,
-    journey: normalizeMindsetCampaignJourney(campaign.journey),
-    template: campaign.template,
+    journey: normalizeMindsetCampaignJourney(campaign.journey, template),
+    template,
     isSystem: campaign.isSystem === true,
     createdAt: toIso(campaign.createdAt),
     updatedAt: toIso(campaign.updatedAt),
@@ -383,6 +391,7 @@ function serializeLead(
       content: entry.content,
       at: toIso(entry.at),
       source: entry.role === 'assistant' ? entry.source || 'automation' : null,
+      campaignSessionId: entry.campaignSessionId || null,
     }))
     .sort((first, second) => (first.at || '').localeCompare(second.at || ''));
 
@@ -393,6 +402,8 @@ function serializeLead(
     profilePictureUrl: lead.profilePictureUrl || null,
     campaignId: lead.campaignId || null,
     campaignName: lead.campaignName || null,
+    campaignTemplate: normalizeMindsetCampaignTemplate(lead.campaignTemplate),
+    campaignSessionId: lead.campaignSessionId || null,
     keyword: lead.triggerKeyword || '',
     stage: lead.stage || 'awaiting_link_request',
     feedbackReason: lead.feedbackReason || null,
@@ -684,6 +695,8 @@ export const simulateMindsetConversationApi = functions.https.onCall(async (data
       'Invalid test quick reply payload'
     );
   }
+  const template = normalizeMindsetCampaignTemplate(data?.template);
+  const journey = normalizeMindsetCampaignJourney(data?.journey, template);
 
   return simulateMindsetTurn(
     stage,
@@ -698,7 +711,8 @@ export const simulateMindsetConversationApi = functions.https.onCall(async (data
         userMessage,
         fallbackResponse: '',
       }),
-    quickReplyPayload
+    quickReplyPayload,
+    { template, journey }
   );
 });
 
@@ -758,7 +772,8 @@ export const saveMindsetCampaignApi = functions.https.onCall(async (data, contex
   const publicReplyText = typeof data?.publicReplyText === 'string'
     ? data.publicReplyText.trim()
     : DEFAULT_MINDSET_PUBLIC_REPLY_TEXT;
-  const journey = normalizeMindsetCampaignJourney(data?.journey);
+  const template = normalizeMindsetCampaignTemplate(data?.template);
+  const journey = normalizeMindsetCampaignJourney(data?.journey, template);
   const mode = getBotMode();
   const validationErrors = validateMindsetCampaignInput({
     name,
@@ -768,6 +783,7 @@ export const saveMindsetCampaignApi = functions.https.onCall(async (data, contex
     status,
     publicReplyEnabled,
     publicReplyText,
+    template,
     journey,
   }, mode);
   if (validationErrors.length > 0) {
@@ -880,7 +896,7 @@ export const saveMindsetCampaignApi = functions.https.onCall(async (data, contex
     publicReplyEnabled,
     publicReplyText,
     journey,
-    template: 'athlete_mindset_download',
+    template,
     updatedAt: now,
     ...(id ? {} : { createdAt: now }),
   };

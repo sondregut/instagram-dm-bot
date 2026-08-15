@@ -16,6 +16,14 @@ import {
   shouldUseMindsetAIForReplyIntent,
   shouldSuppressMindsetAutomatedReply,
 } from './mindsetFlowLogic';
+import {
+  MindsetCampaignJourney,
+  normalizeMindsetCampaignJourney,
+} from './mindsetCampaignJourney';
+import {
+  MindsetCampaignTemplate,
+  normalizeMindsetCampaignTemplate,
+} from './mindsetCampaignProduct';
 
 export interface MindsetSimulationMessage {
   role: 'user' | 'assistant';
@@ -41,6 +49,8 @@ export type MindsetSimulationAIGenerator = (
 export interface MindsetSimulationOptions {
   conversationIsRecent?: boolean;
   classifyScope?: MindsetSimulationAIGenerator;
+  template?: MindsetCampaignTemplate;
+  journey?: MindsetCampaignJourney;
 }
 
 const CLOSED_SIMULATION_STAGES = new Set<MindsetStage>([
@@ -63,6 +73,9 @@ export async function simulateMindsetTurn(
 ): Promise<MindsetSimulationResult> {
   const userMessage = message.trim();
   if (!userMessage) throw new Error('A test message is required');
+  const template = normalizeMindsetCampaignTemplate(options.template);
+  const journey = normalizeMindsetCampaignJourney(options.journey, template);
+  const actionContext = { template, journey };
 
   const quickReplyAction = quickReplyPayload?.startsWith('mindset:')
     ? quickReplyPayload.split(':')[1]
@@ -89,7 +102,7 @@ export async function simulateMindsetTurn(
     };
   }
   if (quickReplyAction) {
-    const plan = buildMindsetActionPlan(action, stage, activationUrl);
+    const plan = buildMindsetActionPlan(action, stage, activationUrl, actionContext);
     if (plan) {
       return {
         reply: plan.message,
@@ -121,7 +134,8 @@ export async function simulateMindsetTurn(
         buildMindsetScopeClassifierPrompt(
           stage,
           previousAssistantMessage,
-          conversationIsRecent
+          conversationIsRecent,
+          template
         ),
         [{ role: 'user', content: userMessage }],
         userMessage
@@ -152,7 +166,7 @@ export async function simulateMindsetTurn(
   }
 
   if (!shouldUseMindsetAIForReplyIntent(classifiedAction)) {
-    const plan = buildMindsetActionPlan(action, stage, activationUrl);
+    const plan = buildMindsetActionPlan(action, stage, activationUrl, actionContext);
     if (plan) {
       return {
         reply: plan.message,
@@ -167,7 +181,7 @@ export async function simulateMindsetTurn(
 
   const aiResult = generateAI
     ? await generateAI(
-      buildMindsetAISystemPrompt(stage),
+      buildMindsetAISystemPrompt(stage, template),
       [...history.slice(-8), { role: 'user', content: userMessage }],
       userMessage
     )
@@ -177,7 +191,12 @@ export async function simulateMindsetTurn(
   const aiRequestedAppLink = aiResult.usedAI
     && mindsetAIControlAction(aiResult.text) === 'send_app_link';
   if (aiRequestedAppLink) {
-    const plan = buildMindsetActionPlan('app_link_request', stage, activationUrl);
+    const plan = buildMindsetActionPlan(
+      'app_link_request',
+      stage,
+      activationUrl,
+      actionContext
+    );
     if (!plan) throw new Error('App-link action is unavailable');
     return {
       reply: plan.message,

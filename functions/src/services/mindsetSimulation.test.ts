@@ -55,6 +55,55 @@ test('resends the real app link when the person says it did not arrive', async (
   assert.equal(result.createsHandoff, false);
 });
 
+test('simulates Vault resends with the exact Vault URL and no Athlete Mindset copy', async () => {
+  const result = await simulateMindsetTurn(
+    'link_sent',
+    "i didn't get it",
+    activationUrl,
+    [],
+    async () => { throw new Error('Claude should not be called for a failed link delivery'); },
+    undefined,
+    { template: 'vault_tracker_download' }
+  );
+  assert.equal(result.reply, 'here you go! hope you like it');
+  assert.deepEqual(result.additionalReplies, ['https://stavhopp.no/get?src=instagram']);
+  assert.equal(result.nextStage, 'link_sent');
+  assert.doesNotMatch(JSON.stringify(result), /Athlete Mindset|mental rep/i);
+});
+
+test('silently hands off Vault technique questions while keeping app questions in scope', async () => {
+  let classifierPrompt = '';
+  const offTopic = await simulateMindsetTurn(
+    'ai_follow_up',
+    'What pole and grip should I use?',
+    activationUrl,
+    [],
+    async (systemPrompt) => {
+      classifierPrompt = systemPrompt;
+      return { text: 'OFF_TOPIC', usedAI: true };
+    },
+    undefined,
+    { template: 'vault_tracker_download' }
+  );
+  assert.equal(offTopic.reply, '');
+  assert.equal(offTopic.nextStage, 'human_handoff');
+  assert.equal(offTopic.handoffReason, 'off_topic');
+  assert.match(classifierPrompt, /Vault/);
+  assert.match(classifierPrompt, /which pole or grip to use/i);
+
+  const inScope = await simulateMindsetTurn(
+    'ai_follow_up',
+    'How do I add a pole in Vault?',
+    activationUrl,
+    [],
+    inScopeThen({ text: 'Open your pole library in Vault and add the pole there.', usedAI: true }),
+    undefined,
+    { template: 'vault_tracker_download' }
+  );
+  assert.equal(inScope.createsHandoff, false);
+  assert.match(inScope.reply, /pole library/i);
+});
+
 test('turns Claude link controls into the same real two-message action', async () => {
   const result = await simulateMindsetTurn(
     'awaiting_download_status',

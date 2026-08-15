@@ -97,6 +97,42 @@ test('binds every scheduled follow-up to the exact lead and account owner', () =
   ), false);
 });
 
+test('rejects a follow-up from an older product campaign session', () => {
+  const record = {
+    ...lead(accountA, userA),
+    campaignSessionId: 'vault-session',
+  };
+  assert.equal(isMindsetFollowUpIdentityMatch(
+    {
+      leadId: record.id,
+      accountId: accountA,
+      campaignSessionId: 'vault-session',
+    },
+    record.id,
+    record,
+    accountA,
+    ownerA
+  ), true);
+  assert.equal(isMindsetFollowUpIdentityMatch(
+    {
+      leadId: record.id,
+      accountId: accountA,
+      campaignSessionId: 'older-mindset-session',
+    },
+    record.id,
+    record,
+    accountA,
+    ownerA
+  ), false);
+  assert.equal(isMindsetFollowUpIdentityMatch(
+    { leadId: record.id, accountId: accountA },
+    record.id,
+    record,
+    accountA,
+    ownerA
+  ), false);
+});
+
 test('drops history entries explicitly scoped to a different conversation', () => {
   const conversationA = buildMindsetConversationId(accountA, userA);
   const conversationB = buildMindsetConversationId(accountA, userB);

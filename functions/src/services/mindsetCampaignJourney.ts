@@ -1,4 +1,8 @@
 import { MINDSET_NO_CLICK_FOLLOW_UP_MESSAGE } from './mindsetFlowLogic';
+import {
+  MindsetCampaignTemplate,
+  normalizeMindsetCampaignTemplate,
+} from './mindsetCampaignProduct';
 
 export type MindsetCampaignFollowUpKey =
   | 'noClick'
@@ -51,6 +55,44 @@ export const DEFAULT_MINDSET_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
   },
 };
 
+export const DEFAULT_VAULT_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
+  openingMessage: "Click below to get the link to download Vault!\n\nIf you don't see the button, just reply link\n\nAppreciate you,\nSondre",
+  openingButtonText: 'Send me the link',
+  linkMessage: 'here you go! hope you like it',
+  linkButtonText: 'Download App',
+  destinationUrl: 'https://stavhopp.no/get?src=instagram',
+  followUps: {
+    noClick: {
+      enabled: true,
+      delayMinutes: 30,
+      message: 'hi, just curious what you think of Vault so far if you’ve had a chance to try it yet',
+    },
+    downloadCheck: {
+      enabled: true,
+      delayMinutes: 30,
+      message: 'Quick check, did you manage to download and open Vault?',
+    },
+    useCheck: {
+      enabled: true,
+      delayMinutes: 45,
+      message: 'hi, just curious what you think of Vault so far if you’ve had a chance to try it yet',
+    },
+    feedbackCheck: {
+      enabled: true,
+      delayMinutes: 5,
+      message: 'How did logging your first session in Vault feel?',
+    },
+  },
+};
+
+export function defaultMindsetCampaignJourney(
+  template: MindsetCampaignTemplate
+): MindsetCampaignJourney {
+  return template === 'vault_tracker_download'
+    ? DEFAULT_VAULT_CAMPAIGN_JOURNEY
+    : DEFAULT_MINDSET_CAMPAIGN_JOURNEY;
+}
+
 const LEGACY_OPENING_MESSAGES = new Set([
   'Click below to get the link to download Athlete Mindset!\n\nAppreciate you,\nSondre',
 ]);
@@ -75,16 +117,18 @@ function textValue(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
 
-function openingMessageValue(value: unknown): string {
-  const message = textValue(value, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.openingMessage);
-  return LEGACY_OPENING_MESSAGES.has(message)
+function openingMessageValue(value: unknown, fallback: string): string {
+  const message = textValue(value, fallback);
+  return fallback === DEFAULT_MINDSET_CAMPAIGN_JOURNEY.openingMessage
+    && LEGACY_OPENING_MESSAGES.has(message)
     ? DEFAULT_MINDSET_CAMPAIGN_JOURNEY.openingMessage
     : message;
 }
 
-function linkMessageValue(value: unknown): string {
-  const message = textValue(value, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.linkMessage);
-  return LEGACY_LINK_MESSAGES.has(message)
+function linkMessageValue(value: unknown, fallback: string): string {
+  const message = textValue(value, fallback);
+  return fallback === DEFAULT_MINDSET_CAMPAIGN_JOURNEY.linkMessage
+    && LEGACY_LINK_MESSAGES.has(message)
     ? DEFAULT_MINDSET_CAMPAIGN_JOURNEY.linkMessage
     : message;
 }
@@ -106,7 +150,12 @@ function delayValue(value: unknown, fallback: number): number {
     : fallback;
 }
 
-export function normalizeMindsetCampaignJourney(value: unknown): MindsetCampaignJourney {
+export function normalizeMindsetCampaignJourney(
+  value: unknown,
+  templateValue: unknown = 'athlete_mindset_download'
+): MindsetCampaignJourney {
+  const template = normalizeMindsetCampaignTemplate(templateValue);
+  const journeyDefaults = defaultMindsetCampaignJourney(template);
   const input = value && typeof value === 'object'
     ? value as Partial<MindsetCampaignJourney>
     : {};
@@ -116,7 +165,7 @@ export function normalizeMindsetCampaignJourney(value: unknown): MindsetCampaign
   const followUps = {} as Record<MindsetCampaignFollowUpKey, MindsetCampaignFollowUp>;
 
   for (const key of FOLLOW_UP_KEYS) {
-    const defaults = DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps[key];
+    const defaults = journeyDefaults.followUps[key];
     const candidate = inputFollowUps[key] || {};
     followUps[key] = {
       enabled: candidate.enabled !== false,
@@ -126,17 +175,20 @@ export function normalizeMindsetCampaignJourney(value: unknown): MindsetCampaign
   }
 
   return {
-    openingMessage: openingMessageValue(input.openingMessage),
-    openingButtonText: textValue(input.openingButtonText, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.openingButtonText),
-    linkMessage: linkMessageValue(input.linkMessage),
-    linkButtonText: textValue(input.linkButtonText, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.linkButtonText),
-    destinationUrl: textValue(input.destinationUrl, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.destinationUrl),
+    openingMessage: openingMessageValue(input.openingMessage, journeyDefaults.openingMessage),
+    openingButtonText: textValue(input.openingButtonText, journeyDefaults.openingButtonText),
+    linkMessage: linkMessageValue(input.linkMessage, journeyDefaults.linkMessage),
+    linkButtonText: textValue(input.linkButtonText, journeyDefaults.linkButtonText),
+    destinationUrl: textValue(input.destinationUrl, journeyDefaults.destinationUrl),
     followUps,
   };
 }
 
-export function validateMindsetCampaignJourney(value: unknown): string[] {
-  const journey = normalizeMindsetCampaignJourney(value);
+export function validateMindsetCampaignJourney(
+  value: unknown,
+  templateValue: unknown = 'athlete_mindset_download'
+): string[] {
+  const journey = normalizeMindsetCampaignJourney(value, templateValue);
   const errors: string[] = [];
 
   if (journey.openingMessage.length < 2 || journey.openingMessage.length > 500) {

@@ -1,4 +1,5 @@
 import {
+  MindsetCampaignTemplate,
   MindsetConversationStage,
   MindsetTestTurnInput,
   MindsetTestTurnResult,
@@ -32,9 +33,10 @@ function normalize(value: string): string {
     .toLowerCase();
 }
 
-function firstRepBlockerResult(): MindsetTestTurnResult {
+function usageBlockerResult(template: MindsetCampaignTemplate): MindsetTestTurnResult {
+  const vault = template === 'vault_tracker_download';
   return result(
-    'What got in the way of trying your first mental rep?',
+    vault ? 'What got in the way of trying Vault?' : 'What got in the way of trying your first mental rep?',
     'ai_follow_up',
     { quickReplies: [
       { title: 'Need more time', payload: 'mindset:reason_no_time' },
@@ -58,26 +60,25 @@ function subscriptionBlockerResult(): MindsetTestTurnResult {
 
 function simulateReviewQuickReply(
   action: string,
-  stage: MindsetConversationStage
+  stage: MindsetConversationStage,
+  template: MindsetCampaignTemplate
 ): MindsetTestTurnResult | null {
+  const vault = template === 'vault_tracker_download';
   switch (action) {
     case 'downloaded':
       return result(
-        'Awesome, excited to hear what you think about it.',
+        vault
+          ? 'awesome, excited to hear what you think about Vault'
+          : 'Awesome, excited to hear what you think about it.',
         'awaiting_use_status'
       );
     case 'used':
       return result(
-        'Nice! How did that first mental rep feel?',
-        'awaiting_feedback',
-        { quickReplies: [
-          { title: 'It helped', payload: 'mindset:feedback_positive' },
-          { title: 'Not sure yet', payload: 'mindset:feedback_unsure' },
-          { title: "Didn't like it", payload: 'mindset:feedback_negative' },
-        ] }
+        'nice, glad you gave it a try!',
+        'completed'
       );
     case 'rep_not_yet':
-      return firstRepBlockerResult();
+      return usageBlockerResult(template);
     case 'feedback_positive':
       return result(
         'Love that. Keep going, and let me know how the next few sessions feel.',
@@ -94,7 +95,7 @@ function simulateReviewQuickReply(
     case 'objection_price':
     case 'price_objection':
       return result(
-        'That makes sense. Price matters. The App Store shows the current offer. What would Athlete Mindset need to help with for it to feel worthwhile?',
+        `That makes sense. Price matters. The App Store shows the current offer. What would ${vault ? 'Vault' : 'Athlete Mindset'} need to help with for it to feel worthwhile?`,
         'ai_follow_up'
       );
     case 'price_question':
@@ -118,14 +119,16 @@ function simulateReviewQuickReply(
         'subscription_claimed'
       );
     case 'onboarding_help':
-      return result('What would help most: building a routine, choosing a training session, or using Aomi?', 'ai_follow_up');
+      return result(vault
+        ? 'What would help most: logging a session, adding poles, attaching video, or reviewing your stats?'
+        : 'What would help most: building a routine, choosing a training session, or using Aomi?', 'ai_follow_up');
     case 'complete':
       return result('Perfect. Enjoy the app, and message anytime if you get stuck.', 'completed');
     case 'not_yet':
-      if (['awaiting_activation', 'awaiting_use_status'].includes(stage)) return firstRepBlockerResult();
+      if (['awaiting_activation', 'awaiting_use_status'].includes(stage)) return usageBlockerResult(template);
       if (['awaiting_offer_status', 'awaiting_subscription_status'].includes(stage)) return subscriptionBlockerResult();
       return result(
-        'What stopped you from downloading or opening the app?',
+        vault ? 'What stopped you from downloading or opening Vault?' : 'What stopped you from downloading or opening the app?',
         'ai_follow_up',
         { quickReplies: [
           { title: 'No time yet', payload: 'mindset:reason_no_time' },
@@ -139,7 +142,9 @@ function simulateReviewQuickReply(
       return result('I can help. What happened when you tried the link or opened the app?', 'ai_follow_up');
     case 'reason_navigation':
       return result(
-        "During setup, keep going until the mental-rep preview. If you already have access, open Home and tap Today's Mental Rep. What screen are you on?",
+        vault
+          ? 'What screen are you on, and what are you trying to log in Vault?'
+          : "During setup, keep going until the mental-rep preview. If you already have access, open Home and tap Today's Mental Rep. What screen are you on?",
         'awaiting_use_status'
       );
     case 'reason_link':
@@ -147,7 +152,9 @@ function simulateReviewQuickReply(
     case 'reason_unsure':
       return result('That makes sense. What would you need to know before deciding whether it is useful for you?', 'ai_follow_up');
     case 'reason_no_time':
-      return result('Understood. When would be a realistic time for you to try the first rep?', 'ai_follow_up');
+      return result(vault
+        ? 'Understood. When would be a realistic time for you to try Vault?'
+        : 'Understood. When would be a realistic time for you to try the first rep?', 'ai_follow_up');
     case 'human':
       return result('', 'human_handoff', {
         createsHandoff: true,
@@ -164,14 +171,21 @@ export async function simulateReviewMindsetTurn(
   const message = normalize(input.message);
   if (!message) throw new Error('Enter a test message.');
   const isQuestion = message.endsWith('?');
+  const vault = input.template === 'vault_tracker_download';
+  const appName = vault ? 'Vault' : 'Athlete Mindset';
+  const appLink = vault
+    ? 'https://stavhopp.no/get?src=instagram'
+    : 'https://athletemindset.app/app';
 
   const affirmative = /^(?:yes|yeah|yep|yup|yes i did|i did|sure did|already did|done)[.!\s]*$/
     .test(message);
   if (affirmative && input.stage === 'awaiting_download_status') {
-    return result('Awesome, excited to hear what you think about it.', 'awaiting_use_status');
+    return result(vault
+      ? 'awesome, excited to hear what you think about Vault'
+      : 'Awesome, excited to hear what you think about it.', 'awaiting_use_status');
   }
   if (affirmative && input.stage === 'awaiting_use_status') {
-    return result('Nice! How did that first mental rep feel?', 'awaiting_feedback');
+    return result('nice, glad you gave it a try!', 'completed');
   }
 
   const clearlyUnrelatedLink = /\blink\b.{0,35}\b(?:video|youtube|post|reel|pole vault|spikes?|poles?)\b/.test(message)
@@ -182,7 +196,7 @@ export async function simulateReviewMindsetTurn(
   )) {
     return {
       ...result('here you go! hope you like it', input.stage),
-      additionalReplies: ['https://athletemindset.app/app'],
+      additionalReplies: [appLink],
     };
   }
 
@@ -190,7 +204,7 @@ export async function simulateReviewMindsetTurn(
     ? input.quickReplyPayload.split(':')[1]
     : null;
   if (quickReplyAction) {
-    const quickReplyResult = simulateReviewQuickReply(quickReplyAction, input.stage);
+    const quickReplyResult = simulateReviewQuickReply(quickReplyAction, input.stage, input.template);
     if (quickReplyResult) return quickReplyResult;
   }
 
@@ -232,7 +246,7 @@ export async function simulateReviewMindsetTurn(
 
   if (/\b(too expensive|expensive|overpriced|cannot afford|can't afford|costs? too much|price (is )?(too )?high)\b/.test(message)) {
     return result(
-      'That makes sense. Price matters. The App Store shows the current offer. What would Athlete Mindset need to help with for it to feel worthwhile?',
+      `That makes sense. Price matters. The App Store shows the current offer. What would ${appName} need to help with for it to feel worthwhile?`,
       'ai_follow_up'
     );
   }
@@ -261,7 +275,9 @@ export async function simulateReviewMindsetTurn(
 
   if (/\b(can't|cannot|could not|couldn't) find\b|\bwhere (?:is|do i find) (?:the )?(?:first )?(?:rep|session)\b/.test(message)) {
     return result(
-      "During setup, keep going until the mental-rep preview. If you already have access, open Home and tap Today's Mental Rep. What screen are you on?",
+      vault
+        ? 'What screen are you on, and what are you trying to log in Vault?'
+        : "During setup, keep going until the mental-rep preview. If you already have access, open Home and tap Today's Mental Rep. What screen are you on?",
       'awaiting_use_status'
     );
   }
@@ -283,7 +299,7 @@ export async function simulateReviewMindsetTurn(
   if (notYet) {
     if (['awaiting_activation', 'awaiting_use_status'].includes(input.stage)) {
       return result(
-        'What got in the way of trying your first mental rep?',
+        vault ? 'What got in the way of trying Vault?' : 'What got in the way of trying your first mental rep?',
         'ai_follow_up',
         { quickReplies: [
           { title: 'Need more time', payload: 'mindset:reason_no_time' },
@@ -304,7 +320,7 @@ export async function simulateReviewMindsetTurn(
       );
     }
     return result(
-      'What stopped you from downloading or opening the app?',
+      vault ? 'What stopped you from downloading or opening Vault?' : 'What stopped you from downloading or opening the app?',
       'ai_follow_up',
       { quickReplies: [
         { title: 'No time yet', payload: 'mindset:reason_no_time' },
@@ -316,13 +332,8 @@ export async function simulateReviewMindsetTurn(
 
   if (/\b(tried|used|completed|finished|did (it|a rep)|first rep)\b/.test(message)) {
     return result(
-      'Nice! How did that first mental rep feel?',
-      'awaiting_feedback',
-      { quickReplies: [
-        { title: 'It helped', payload: 'mindset:feedback_positive' },
-        { title: 'Not sure yet', payload: 'mindset:feedback_unsure' },
-        { title: "Didn't like it", payload: 'mindset:feedback_negative' },
-      ] }
+      'nice, glad you gave it a try!',
+      'completed'
     );
   }
 
@@ -335,47 +346,56 @@ export async function simulateReviewMindsetTurn(
 
   if (/\b(downloaded|installed|got it|opened it)\b/.test(message)) {
     return result(
-      'Awesome, excited to hear what you think about it.',
+      vault
+        ? 'awesome, excited to hear what you think about Vault'
+        : 'Awesome, excited to hear what you think about it.',
       'awaiting_use_status'
     );
   }
 
-  if (/\b(?:how does|how do i use|what does) (?:the )?(?:app|athlete mindset)(?: work| do)?\b|\bwhat is athlete mindset\b/.test(message)) {
+  if (vault && /\b(?:what is|how does|how do i use|what does) (?:the )?(?:app|vault)(?: work| do)?\b/.test(message)) {
+    return result(
+      'Vault helps pole vaulters log sessions, jumps, poles, grip, steps, mid-mark, bar height, notes, and attached video, then review training trends.',
+      'ai_follow_up'
+    );
+  }
+
+  if (!vault && /\b(?:how does|how do i use|what does) (?:the )?(?:app|athlete mindset)(?: work| do)?\b|\bwhat is athlete mindset\b/.test(message)) {
     return result(
       'It personalizes a short mental-rep preview during setup. After access, Home has daily reps, Training has guided sessions, and Aomi offers voice or chat coaching.',
       'ai_follow_up'
     );
   }
 
-  if (/\baomi\b/.test(message)) {
+  if (!vault && /\baomi\b/.test(message)) {
     return result(
       'Aomi is the in-app AI mental coach for voice or chat conversations about nerves, confidence, focus, goals, and competition prep. It is separate from the daily mental rep.',
       'ai_follow_up'
     );
   }
 
-  if (/\btraining (?:tab|library)|\bguided sessions?\b|\bvisualization sessions?\b/.test(message)) {
+  if (!vault && /\btraining (?:tab|library)|\bguided sessions?\b|\bvisualization sessions?\b/.test(message)) {
     return result(
       'After you have access, open Training for guided visualization, resilience, recovery, breathwork, and meditation sessions with different lengths.',
       'ai_follow_up'
     );
   }
 
-  if (/\bprogress|\bhistory|\bstreaks?|\breflections?\b/.test(message)) {
+  if (!vault && /\bprogress|\bhistory|\bstreaks?|\breflections?\b/.test(message)) {
     return result(
       'Progress brings together mental reps, reflections, training sessions, Aomi conversations, streaks, goals, and competition context.',
       'ai_follow_up'
     );
   }
 
-  if (/\btherapy|\btherapist|\bmedical care\b/.test(message)) {
+  if (!vault && /\btherapy|\btherapist|\bmedical care\b/.test(message)) {
     return result(
       'Athlete Mindset is a sports mental skills tool, not therapy or medical care. It focuses on performance areas like nerves, confidence, focus, and mental rehearsal.',
       'ai_follow_up'
     );
   }
 
-  if (/\bdoes (?:this|athlete mindset|the app) (?:work|help|support)\b/.test(message)
+  if (!vault && /\bdoes (?:this|athlete mindset|the app) (?:work|help|support)\b/.test(message)
       && /\b(?:pole vault|runner|running|football|soccer|basketball|athlete|sport)\b/.test(message)) {
     return result(
       'Athlete Mindset is designed for athletes across sports. It helps train mental skills such as nerves, confidence, focus, and preparation.',

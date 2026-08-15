@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   DEFAULT_MINDSET_CAMPAIGN_JOURNEY,
+  DEFAULT_VAULT_CAMPAIGN_JOURNEY,
   mindsetCampaignFollowUpDelayMs,
   normalizeMindsetCampaignJourney,
   validateMindsetCampaignJourney,
@@ -46,6 +47,19 @@ test('normalizes legacy campaigns to the complete default journey', () => {
       },
     }).followUps.noClick.message,
     'hi, just curious what you think of the app so far if you’ve had a chance to try it yet'
+  );
+});
+
+test('provides an isolated Vault journey with the exact requested handoff link', () => {
+  const journey = normalizeMindsetCampaignJourney(undefined, 'vault_tracker_download');
+  assert.deepEqual(journey, DEFAULT_VAULT_CAMPAIGN_JOURNEY);
+  assert.equal(journey.destinationUrl, 'https://stavhopp.no/get?src=instagram');
+  assert.match(journey.openingMessage, /download Vault/i);
+  assert.match(journey.openingMessage, /reply link/i);
+  assert.doesNotMatch(JSON.stringify(journey), /Athlete Mindset|mental rep/i);
+  assert.deepEqual(
+    validateMindsetCampaignJourney(journey, 'vault_tracker_download'),
+    []
   );
 });
 
