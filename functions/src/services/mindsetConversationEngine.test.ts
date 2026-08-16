@@ -4,6 +4,7 @@ import {
   buildMindsetActionPlan,
   MindsetStage,
 } from './mindsetConversationEngine';
+import { ANDROID_AVAILABILITY_REPLY } from './mindsetProductKnowledge';
 import {
   classifyMindsetReply,
   classifyMindsetReplyForStage,
@@ -95,6 +96,9 @@ const intentCases: Array<[string, ReturnType<typeof classifyMindsetReply>]> = [
   ['Yes', 'other'],
   ['Does this work for pole vaulters?', 'other'],
   ['Send me the app link again', 'app_link_request'],
+  ['Is this available for Android?', 'android_availability'],
+  ['Is it in the Play Store?', 'android_availability'],
+  ['Does this work on a Samsung Galaxy?', 'android_availability'],
 ];
 
 test('normalizes Instagram punctuation before intent matching', () => {
@@ -132,6 +136,28 @@ test('does not send another link after a user says they opened the app', () => {
   assert.doesNotMatch(plan.message, /https?:\/\//i);
   assert.doesNotMatch(plan.message, /\?/);
   assert.equal(plan.quickReplies, undefined);
+});
+
+test('answers Android availability exactly without restarting either product journey', () => {
+  for (const template of ['athlete_mindset_download', 'vault_tracker_download'] as const) {
+    const plan = buildMindsetActionPlan(
+      'android_availability',
+      'completed',
+      activationUrl,
+      { template }
+    );
+    assert.ok(plan);
+    assert.equal(plan.message, ANDROID_AVAILABILITY_REPLY);
+    assert.equal(
+      plan.message,
+      'sorry, it’s not available for android yet, but if we see there’s demand for it, we might make it in the future'
+    );
+    assert.equal(plan.nextStage, 'completed');
+    assert.equal(plan.additionalMessages, undefined);
+    assert.equal(plan.buttons, undefined);
+    assert.equal(plan.quickReplies, undefined);
+    assert.doesNotMatch(plan.message, /[?.—]$/);
+  }
 });
 
 test('responds to not using the app according to the current stage', () => {
@@ -227,6 +253,7 @@ test('all deterministic responses fit Instagram copy constraints', () => {
     'reason_link', 'reason_unsure', 'reason_no_time', 'human',
     'gratitude',
     'app_link_request',
+    'android_availability',
   ];
   const stages: MindsetStage[] = [
     'awaiting_download_status',

@@ -4,6 +4,8 @@
  * Keep this aligned with the current iOS implementation. Claude receives this
  * on every adaptive campaign turn, before any account knowledge-base snippets.
  */
+export const ANDROID_AVAILABILITY_REPLY = 'sorry, it’s not available for android yet, but if we see there’s demand for it, we might make it in the future';
+
 export const MINDSET_PRODUCT_KNOWLEDGE = `
 # CANONICAL ATHLETE MINDSET PRODUCT GUIDE
 
@@ -45,7 +47,8 @@ export const MINDSET_PRODUCT_KNOWLEDGE = `
 - Purchases, restore purchase, and subscription management happen through Apple. Never request payment information in Instagram.
 - Never infer that someone paid, subscribed, or started a trial from their words alone. The automation treats those as verified only when an app or subscription event confirms them.
 - Do not ask whether they subscribed, paid, or started a trial. Answer questions they choose to ask and let verified events move the conversation stage.
-- The current confirmed product here is the iPhone app. If asked about another platform, state only that the confirmed app is on iPhone. Do not claim an Android or web version is available or unavailable, speculate about future plans, promise future features, give exact session counts, guarantee performance results, or invent an offer.
+- Athlete Mindset is not available for Android yet. For any Android, Google Play, Samsung, or Pixel availability question, reply exactly: "${ANDROID_AVAILABILITY_REPLY}". This is conditional on demand and is not a promise of an Android release.
+- The current confirmed product here is the iPhone app. Web availability is unconfirmed. Do not speculate about other platforms or future plans, promise future features, give exact session counts, guarantee performance results, or invent an offer.
 
 ## Source priority
 - This product guide is the canonical source for product behavior in this campaign.

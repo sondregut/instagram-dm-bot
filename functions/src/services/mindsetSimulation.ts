@@ -86,6 +86,7 @@ export async function simulateMindsetTurn(
   const action = quickReplyAction || classifiedAction;
   const mayContinueAfterClosedFunnel = [
     'app_link_request',
+    'android_availability',
     'trial_started',
     'subscribed',
     'human',

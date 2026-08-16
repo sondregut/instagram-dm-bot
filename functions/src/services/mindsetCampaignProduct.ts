@@ -1,4 +1,7 @@
-import { MINDSET_PRODUCT_KNOWLEDGE } from './mindsetProductKnowledge';
+import {
+  ANDROID_AVAILABILITY_REPLY,
+  MINDSET_PRODUCT_KNOWLEDGE,
+} from './mindsetProductKnowledge';
 
 export type MindsetCampaignTemplate =
   | 'athlete_mindset_download'
@@ -40,7 +43,8 @@ const VAULT_PRODUCT_KNOWLEDGE = `
 - Purchases, restore purchase, and subscription management happen through Apple. Never request payment information in Instagram.
 - Do not infer that someone paid or started a trial from their words alone. Treat conversion as verified only when a verified app or subscription event confirms it.
 - Do not ask whether they subscribed, paid, or started a trial.
-- Do not invent exact navigation, controls, prices, guarantees, platform availability, or future features.
+- Vault is not available for Android yet. For any Android, Google Play, Samsung, or Pixel availability question, reply exactly: "${ANDROID_AVAILABILITY_REPLY}". This is conditional on demand and is not a promise of an Android release.
+- Do not invent exact navigation, controls, prices, guarantees, availability on other platforms, or future features.
 - Vault is a tracking and review tool. It does not replace a coach and this assistant must not give pole-vault technique, equipment-selection, medical, or injury advice.
 
 ## Conversation scope
@@ -59,7 +63,7 @@ const PROFILES: Record<MindsetCampaignTemplate, MindsetCampaignProductProfile> =
     template: 'athlete_mindset_download',
     name: 'Athlete Mindset',
     shortName: 'Athlete Mindset',
-    scopeDescription: 'Athlete Mindset, its app link, onboarding, mental reps, Aomi, app features, navigation, the in-app App Store offer, or feedback about trying the app',
+    scopeDescription: 'Athlete Mindset, its app link, Android availability, onboarding, mental reps, Aomi, app features, navigation, the in-app App Store offer, or feedback about trying the app',
     offTopicExamples: 'pole-vault technique or equipment, general sport coaching, sponsorships, unrelated links, or social conversation',
     productKnowledge: MINDSET_PRODUCT_KNOWLEDGE,
     copy: {
@@ -77,7 +81,7 @@ const PROFILES: Record<MindsetCampaignTemplate, MindsetCampaignProductProfile> =
     template: 'vault_tracker_download',
     name: 'Vault',
     shortName: 'Vault',
-    scopeDescription: 'Vault, its app link, downloading or opening the app, logging sessions or jumps, poles, grip, steps, mid-mark, attached jump videos, voice logging, app analytics, the in-app App Store offer, or feedback about trying the app',
+    scopeDescription: 'Vault, its app link, Android availability, downloading or opening the app, logging sessions or jumps, poles, grip, steps, mid-mark, attached jump videos, voice logging, app analytics, the in-app App Store offer, or feedback about trying the app',
     offTopicExamples: 'pole-vault technique, which pole or grip to use, training programming, injuries, sponsorships, unrelated links, or social conversation',
     productKnowledge: VAULT_PRODUCT_KNOWLEDGE,
     copy: {

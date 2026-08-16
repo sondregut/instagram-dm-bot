@@ -93,6 +93,11 @@ test('classifies the activation replies that drive the state machine', () => {
   assert.equal(classifyMindsetReply('Send it again'), 'app_link_request');
   assert.equal(classifyMindsetReply('Can you send me the app link?'), 'app_link_request');
   assert.equal(classifyMindsetReply('Where is the download link?'), 'app_link_request');
+  assert.equal(classifyMindsetReply('Is it available on Android?'), 'android_availability');
+  assert.equal(classifyMindsetReply('Can I get it on Google Play?'), 'android_availability');
+  assert.equal(classifyMindsetReply('Does it work on Samsung?'), 'android_availability');
+  assert.equal(classifyMindsetReply('android version'), 'android_availability');
+  assert.equal(classifyMindsetReply('I downloaded it on Android'), 'downloaded');
   assert.equal(classifyMindsetReply('Yes, I downloaded it'), 'downloaded');
   assert.equal(classifyMindsetReply('I tried my first rep'), 'used');
   assert.equal(classifyMindsetReply('I started the trial'), 'trial_started');
@@ -161,6 +166,7 @@ test('uses Claude for natural conversation while keeping control outcomes determ
   assert.equal(shouldUseMindsetAIForReplyIntent('other'), true);
   assert.equal(shouldUseMindsetAIForReplyIntent('downloaded'), false);
   assert.equal(shouldUseMindsetAIForReplyIntent('app_link_request'), false);
+  assert.equal(shouldUseMindsetAIForReplyIntent('android_availability'), false);
   assert.equal(shouldUseMindsetAIForReplyIntent('subscribed'), false);
   assert.equal(shouldUseMindsetAIForReplyIntent('price_question'), false);
   assert.equal(shouldUseMindsetAIForReplyIntent('not_interested'), false);
@@ -186,6 +192,10 @@ test('allows only unambiguous messages to bypass the scope classifier', () => {
   );
   assert.equal(
     precheckMindsetAutomationScope('not_interested', 'Stop messaging me', 'ai_follow_up', false),
+    'in_scope'
+  );
+  assert.equal(
+    precheckMindsetAutomationScope('android_availability', 'Google Play?', 'completed', false),
     'in_scope'
   );
   assert.equal(

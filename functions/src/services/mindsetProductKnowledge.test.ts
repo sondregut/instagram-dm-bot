@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MINDSET_PRODUCT_KNOWLEDGE } from './mindsetProductKnowledge';
+import {
+  ANDROID_AVAILABILITY_REPLY,
+  MINDSET_PRODUCT_KNOWLEDGE,
+} from './mindsetProductKnowledge';
 
 test('gives Claude a current map of the Athlete Mindset experience', () => {
   assert.match(MINDSET_PRODUCT_KNOWLEDGE, /Home, Training, Progress, and Profile/);
@@ -17,7 +20,10 @@ test('keeps commercial and safety answers inside verified boundaries', () => {
   assert.match(MINDSET_PRODUCT_KNOWLEDGE, /only source for the current price, billing period, trial, discount, and eligibility terms/i);
   assert.match(MINDSET_PRODUCT_KNOWLEDGE, /Do not ask whether they subscribed, paid, or started a trial/i);
   assert.match(MINDSET_PRODUCT_KNOWLEDGE, /not medical care, therapy, crisis support/i);
-  assert.match(MINDSET_PRODUCT_KNOWLEDGE, /Do not claim an Android or web version is available or unavailable/i);
+  assert.match(MINDSET_PRODUCT_KNOWLEDGE, /not available for Android yet/i);
+  assert.ok(MINDSET_PRODUCT_KNOWLEDGE.includes(ANDROID_AVAILABILITY_REPLY));
+  assert.match(MINDSET_PRODUCT_KNOWLEDGE, /conditional on demand and is not a promise/i);
+  assert.match(MINDSET_PRODUCT_KNOWLEDGE, /Web availability is unconfirmed/i);
   assert.match(MINDSET_PRODUCT_KNOWLEDGE, /Instagram assistant is not Aomi/i);
 });
 

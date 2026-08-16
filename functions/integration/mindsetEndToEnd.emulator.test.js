@@ -79,6 +79,7 @@ const {
   DEFAULT_MINDSET_CAMPAIGN_JOURNEY,
   DEFAULT_VAULT_CAMPAIGN_JOURNEY,
 } = require('../lib/services/mindsetCampaignJourney');
+const { ANDROID_AVAILABILITY_REPLY } = require('../lib/services/mindsetProductKnowledge');
 const { buildMindsetConversationId } = require('../lib/services/mindsetConversationIsolation');
 
 const ownerUserId = 'owner-e2e';
@@ -415,6 +416,16 @@ test('runs the protected comment, DM, tracking, AI, isolation, and follow-up jou
   );
   assert.equal((await feedbackLead.ref.get()).data().stage, 'completed');
 
+  const completedAndroidBefore = outbound.length;
+  const aiBeforeCompletedAndroid = aiRequests.length;
+  await handleMindsetMessage(message(feedbackUser, 'is it available on android?'), account);
+  assert.deepEqual(
+    outbound.slice(completedAndroidBefore).map((item) => item.message),
+    [ANDROID_AVAILABILITY_REPLY]
+  );
+  assert.equal(aiRequests.length, aiBeforeCompletedAndroid);
+  assert.equal((await feedbackLead.ref.get()).data().stage, 'completed');
+
   const userResend = 'ig-user-resend';
   await handleMindsetComment(comment('comment-resend', userResend), account);
   const resendLead = await leadFor(userResend);
@@ -682,6 +693,16 @@ test('runs the protected comment, DM, tracking, AI, isolation, and follow-up jou
     ['here you go! hope you like it', 'https://stavhopp.no/get?src=instagram']
   );
   assert.equal(aiRequests.length, aiBeforeVaultResend);
+
+  const vaultAndroidStart = outbound.length;
+  const aiBeforeVaultAndroid = aiRequests.length;
+  await handleMindsetMessage(message(crossProductUser, 'does it work on samsung?'), account);
+  assert.deepEqual(
+    outbound.slice(vaultAndroidStart).map((item) => item.message),
+    [ANDROID_AVAILABILITY_REPLY]
+  );
+  assert.equal(aiRequests.length, aiBeforeVaultAndroid);
+  assert.equal((await leadFor(crossProductUser)).data.stage, 'link_sent');
 
   const vaultAIStart = aiRequests.length;
   await handleMindsetMessage(message(crossProductUser, 'How do I add a pole in Vault?'), account);

@@ -23,6 +23,7 @@ const MILESTONE_FOLLOW_UP_DELAYS_MS: Record<MindsetMilestoneFollowUp, number> = 
 
 export type MindsetReplyIntent =
   | 'app_link_request'
+  | 'android_availability'
   | 'downloaded'
   | 'used'
   | 'trial_started'
@@ -137,6 +138,7 @@ export function classifyMindsetReply(text: string): MindsetReplyIntent {
 
   if (/\b(?:talk|speak|chat|connect|put me in touch)\b.{0,40}\b(?:human|person|sondre|support)\b/.test(normalized)
       || /\b(?:real human|real person|support agent)\b/.test(normalized)) return 'human';
+  if (isAndroidAvailabilityQuestion(normalized)) return 'android_availability';
   if (!normalized.endsWith('?') && (
     /\b(?:i|we)(?:'ve| have)? (?:already )?(?:started|got) (?:the )?trial\b/.test(normalized)
       || /\b(?:i'm|i am|we're|we are) on (?:the )?trial\b/.test(normalized)
@@ -215,6 +217,7 @@ export function precheckMindsetAutomationScope(
   conversationIsRecent: boolean
 ): MindsetScopePrecheck {
   if (intent === 'human' || requiresMindsetHumanHandoff(text)) return 'human_required';
+  if (intent === 'android_availability') return 'in_scope';
   if (isExplicitMindsetOptOut(text)) return 'in_scope';
   const normalized = normalizeMindsetText(text);
   if (intent === 'app_link_request'
@@ -287,6 +290,7 @@ export function parseMindsetScopeDecision(text: string): MindsetScopeDecision {
 
 const DETERMINISTIC_MINDSET_INTENTS = new Set<MindsetReplyIntent>([
   'app_link_request',
+  'android_availability',
   'downloaded',
   'used',
   'trial_started',
@@ -313,6 +317,17 @@ export function normalizeMindsetText(text: string): string {
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
+}
+
+function isAndroidAvailabilityQuestion(normalizedText: string): boolean {
+  const platform = '(?:android|google play(?: store)?|play ?store|samsung(?: galaxy)?|google pixel|pixel)';
+  const questionLead = '(?:is|are|do|does|can|could|will|would|when|where|how|what)';
+  const availability = '(?:available|availability|version|app|download|install|support(?:ed)?|work(?:s|ing)?|coming|release(?:d)?|launch(?:ing|ed)?|get it|get the app)';
+
+  return new RegExp(`\\b${questionLead}\\b.{0,80}\\b${platform}\\b`).test(normalizedText)
+    || new RegExp(`\\b${platform}\\b.{0,60}\\b${availability}\\b`).test(normalizedText)
+    || new RegExp(`\\b${availability}\\b.{0,60}\\b${platform}\\b`).test(normalizedText)
+    || new RegExp(`^(?:what about\\s+)?${platform}(?:\\s+(?:app|version|phone))?[.!?]*$`).test(normalizedText);
 }
 
 export function isMindsetAppLinkRequest(text: string): boolean {

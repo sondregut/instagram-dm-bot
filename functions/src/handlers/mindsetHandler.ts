@@ -557,7 +557,7 @@ async function handleMindsetAction(
   }
 
   if (CLOSED_FUNNEL_STAGES.has(lead.stage)
-      && !['app_link_request', 'trial_claimed', 'trial_started', 'human', 'subscribed'].includes(action)) {
+      && !['app_link_request', 'android_availability', 'trial_claimed', 'trial_started', 'human', 'subscribed'].includes(action)) {
     console.log(`[Mindset] Ignoring stale funnel action in ${lead.stage}`);
     return;
   }
@@ -737,6 +737,7 @@ export async function handleMindsetMessage(
   const intent = classifyMindsetReplyForStage(text, lead.stage);
   const mayContinueAfterClosedFunnel = [
     'app_link_request',
+    'android_availability',
     'trial_started',
     'subscribed',
   ].includes(intent);
@@ -800,7 +801,10 @@ export async function handleMindsetMessage(
     intent === 'trial_started'
       && !['trial_claimed', 'trial_started', 'subscribed'].includes(lead.stage)
   );
-  const isAllowedClosedFunnelAction = intent === 'app_link_request' || isNewConversionConfirmation;
+  const isAllowedClosedFunnelAction = [
+    'app_link_request',
+    'android_availability',
+  ].includes(intent) || isNewConversionConfirmation;
   const isSafeTerminalAcknowledgement = intent === 'gratitude' || intent === 'not_interested';
   if (!shouldUseMindsetAIForReplyIntent(intent)
       && (![

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { simulateMindsetTurn } from './mindsetSimulation';
+import { ANDROID_AVAILABILITY_REPLY } from './mindsetProductKnowledge';
 
 const activationUrl = 'https://example.com/open-athlete-mindset';
 
@@ -69,6 +70,31 @@ test('simulates Vault resends with the exact Vault URL and no Athlete Mindset co
   assert.deepEqual(result.additionalReplies, ['https://stavhopp.no/get?src=instagram']);
   assert.equal(result.nextStage, 'link_sent');
   assert.doesNotMatch(JSON.stringify(result), /Athlete Mindset|mental rep/i);
+});
+
+test('answers Android questions deterministically for both products, including after completion', async () => {
+  const cases = [
+    { template: 'athlete_mindset_download' as const, message: 'is it available on android?' },
+    { template: 'vault_tracker_download' as const, message: 'does it work on samsung?' },
+  ];
+
+  for (const testCase of cases) {
+    const result = await simulateMindsetTurn(
+      'completed',
+      testCase.message,
+      activationUrl,
+      [],
+      async () => { throw new Error('Claude should not be called for Android availability'); },
+      undefined,
+      { template: testCase.template, conversationIsRecent: false }
+    );
+    assert.equal(result.reply, ANDROID_AVAILABILITY_REPLY);
+    assert.deepEqual(result.additionalReplies, []);
+    assert.equal(result.nextStage, 'completed');
+    assert.equal(result.createsHandoff, false);
+    assert.deepEqual(result.buttons, []);
+    assert.deepEqual(result.quickReplies, []);
+  }
 });
 
 test('silently hands off Vault technique questions while keeping app questions in scope', async () => {

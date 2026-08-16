@@ -1,4 +1,5 @@
 import { buildMindsetDirectAppUrl } from './mindsetFlowLogic';
+import { ANDROID_AVAILABILITY_REPLY } from './mindsetProductKnowledge';
 import {
   MindsetCampaignJourney,
   normalizeMindsetCampaignJourney,
@@ -77,6 +78,12 @@ export function buildMindsetActionPlan(
         message: journey.linkMessage,
         additionalMessages: [buildMindsetDirectAppUrl(journey.destinationUrl)],
         nextStage: stage === 'awaiting_link_request' ? 'link_sent' : stage,
+      };
+
+    case 'android_availability':
+      return {
+        message: ANDROID_AVAILABILITY_REPLY,
+        nextStage: stage,
       };
 
     case 'downloaded':
