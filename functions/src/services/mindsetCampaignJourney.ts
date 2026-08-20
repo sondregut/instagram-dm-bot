@@ -8,7 +8,8 @@ export type MindsetCampaignFollowUpKey =
   | 'noClick'
   | 'downloadCheck'
   | 'useCheck'
-  | 'feedbackCheck';
+  | 'feedbackCheck'
+  | 'resourceOffer';
 
 export interface MindsetCampaignFollowUp {
   enabled: boolean;
@@ -24,6 +25,17 @@ export interface MindsetCampaignJourney {
   destinationUrl: string;
   followUps: Record<MindsetCampaignFollowUpKey, MindsetCampaignFollowUp>;
 }
+
+export const VAULT_RESOURCE_FOLLOW_UP_MESSAGE = `btw, I also have a few other pole vault resources if you’re interested
+
+1:1 coaching
+https://www.stavhopp.no/coaching
+
+training programs
+https://www.stavhopp.no/shop
+
+mental training
+https://www.athletemindset.app/app`;
 
 export const DEFAULT_MINDSET_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
   openingMessage: "Click below to get the link to download Athlete Mindset!\n\nIf you don't see the button, just reply link\n\nAppreciate you,\nSondre",
@@ -51,6 +63,11 @@ export const DEFAULT_MINDSET_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
       enabled: true,
       delayMinutes: 5,
       message: 'How did your first mental rep feel?',
+    },
+    resourceOffer: {
+      enabled: false,
+      delayMinutes: 8 * 60,
+      message: '',
     },
   },
 };
@@ -82,6 +99,11 @@ export const DEFAULT_VAULT_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
       delayMinutes: 5,
       message: 'How did logging your first session in Vault feel?',
     },
+    resourceOffer: {
+      enabled: true,
+      delayMinutes: 8 * 60,
+      message: VAULT_RESOURCE_FOLLOW_UP_MESSAGE,
+    },
   },
 };
 
@@ -111,6 +133,7 @@ const FOLLOW_UP_KEYS: MindsetCampaignFollowUpKey[] = [
   'downloadCheck',
   'useCheck',
   'feedbackCheck',
+  'resourceOffer',
 ];
 
 function textValue(value: unknown, fallback: string): string {
@@ -168,7 +191,9 @@ export function normalizeMindsetCampaignJourney(
     const defaults = journeyDefaults.followUps[key];
     const candidate = inputFollowUps[key] || {};
     followUps[key] = {
-      enabled: candidate.enabled !== false,
+      enabled: typeof candidate.enabled === 'boolean'
+        ? candidate.enabled
+        : defaults.enabled,
       delayMinutes: delayValue(candidate.delayMinutes, defaults.delayMinutes),
       message: followUpMessageValue(key, candidate.message, defaults.message),
     };

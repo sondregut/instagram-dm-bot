@@ -78,6 +78,7 @@ const {
 const {
   DEFAULT_MINDSET_CAMPAIGN_JOURNEY,
   DEFAULT_VAULT_CAMPAIGN_JOURNEY,
+  VAULT_RESOURCE_FOLLOW_UP_MESSAGE,
 } = require('../lib/services/mindsetCampaignJourney');
 const { ANDROID_AVAILABILITY_REPLY } = require('../lib/services/mindsetProductKnowledge');
 const { buildMindsetConversationId } = require('../lib/services/mindsetConversationIsolation');
@@ -400,6 +401,12 @@ test('runs the protected comment, DM, tracking, AI, isolation, and follow-up jou
   assert.equal((await feedbackLead.ref.get()).data().stage, 'completed');
   assert.equal((await pendingUseCheck.get()).data().status, 'cancelled');
   assert.equal((await pendingFeedbackCheck.get()).data().status, 'cancelled');
+  assert.equal(
+    (await db.collection('mindset_followups')
+      .doc(followUpId(feedbackLead.id, 'resource_offer')).get()).exists,
+    false,
+    'Athlete Mindset feedback scheduled the Vault resource offer'
+  );
 
   const afterCompletion = outbound.length;
   const aiAfterCompletion = aiRequests.length;
@@ -712,6 +719,82 @@ test('runs the protected comment, DM, tracking, AI, isolation, and follow-up jou
   assert.doesNotMatch(
     vaultAIRequests.at(-1).history.map((entry) => entry.content).join(' '),
     /OLD_PRODUCT_ONLY/
+  );
+
+  const vaultResourceUser = 'ig-vault-resource-offer';
+  await handleMindsetComment(
+    comment('comment-vault-resource-offer', vaultResourceUser, 'VAULT'),
+    account
+  );
+  const vaultResourceLead = await leadFor(vaultResourceUser);
+  await handleMindsetMessage(
+    quickReply(vaultResourceUser, `mindset:send_link:${vaultResourceLead.data.linkToken}`),
+    account
+  );
+  const vaultPositiveBefore = outbound.length;
+  const aiBeforeVaultPositive = aiRequests.length;
+  await handleMindsetMessage(message(vaultResourceUser, 'I tried it'), account);
+  assert.deepEqual(
+    outbound.slice(vaultPositiveBefore).map((item) => item.message),
+    ['nice, glad you gave it a try!']
+  );
+  assert.equal(aiRequests.length, aiBeforeVaultPositive);
+  assert.equal((await vaultResourceLead.ref.get()).data().stage, 'completed');
+
+  const resourceOfferRef = db.collection('mindset_followups')
+    .doc(followUpId(vaultResourceLead.id, 'resource_offer'));
+  const scheduledResourceOffer = await resourceOfferRef.get();
+  assert.equal(scheduledResourceOffer.data().status, 'pending');
+  assert.equal(
+    scheduledResourceOffer.data().campaignSessionId,
+    vaultResourceLead.data.campaignSessionId
+  );
+  const resourceDelayMs = scheduledResourceOffer.data().dueAt.toMillis()
+    - scheduledResourceOffer.data().createdAt.toMillis();
+  assert.equal(resourceDelayMs, 8 * 60 * 60 * 1000);
+
+  await resourceOfferRef.update({
+    dueAt: admin.firestore.Timestamp.fromMillis(Date.now() - 1_000),
+  });
+  const resourceOfferSendStart = outbound.length;
+  await processMindsetFollowUps();
+  assert.deepEqual(
+    outbound.slice(resourceOfferSendStart).map((item) => item.message),
+    [VAULT_RESOURCE_FOLLOW_UP_MESSAGE]
+  );
+  assert.equal((await resourceOfferRef.get()).data().status, 'completed');
+  assert.equal((await vaultResourceLead.ref.get()).data().stage, 'completed');
+  assert.equal((await vaultResourceLead.ref.get()).data().unansweredFollowUpCount, 1);
+
+  const vaultResourceCancelUser = 'ig-vault-resource-cancel';
+  await handleMindsetComment(
+    comment('comment-vault-resource-cancel', vaultResourceCancelUser, 'VAULT'),
+    account
+  );
+  const vaultResourceCancelLead = await leadFor(vaultResourceCancelUser);
+  await handleMindsetMessage(
+    quickReply(
+      vaultResourceCancelUser,
+      `mindset:send_link:${vaultResourceCancelLead.data.linkToken}`
+    ),
+    account
+  );
+  await handleMindsetMessage(message(vaultResourceCancelUser, 'I like it'), account);
+  const cancelledResourceOfferRef = db.collection('mindset_followups')
+    .doc(followUpId(vaultResourceCancelLead.id, 'resource_offer'));
+  assert.equal((await cancelledResourceOfferRef.get()).data().status, 'pending');
+
+  const completedReplyStart = outbound.length;
+  await handleMindsetMessage(message(vaultResourceCancelUser, 'thanks'), account);
+  assert.equal(
+    outbound.length,
+    completedReplyStart,
+    'completed Vault conversation replied after the user returned'
+  );
+  assert.equal(
+    (await cancelledResourceOfferRef.get()).data().status,
+    'cancelled',
+    'a newer user message did not cancel the resource offer'
   );
 
   const staleFollowUpStart = outbound.length;

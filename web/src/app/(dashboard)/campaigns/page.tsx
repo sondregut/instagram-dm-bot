@@ -514,7 +514,8 @@ function CampaignDetails({
   const active = campaign.status === 'test' || campaign.status === 'live';
   const publicReplies = parseMindsetPublicReplyVariants(campaign.publicReplyText);
   const journey = normalizeMindsetCampaignJourney(campaign.journey, campaign.template);
-  const activeFollowUps = MINDSET_FOLLOW_UP_KEYS.filter((key) => journey.followUps[key].enabled);
+  const activeFollowUps = followUpKeysForTemplate(campaign.template)
+    .filter((key) => journey.followUps[key].enabled);
   const postMode = effectiveCampaignPostMode(campaign);
   const targetPostIds = postMode === 'next'
     ? campaign.nextPostId ? [campaign.nextPostId] : []
@@ -593,6 +594,7 @@ function CampaignDetails({
             post={selectedPosts[0]}
             postMode={postMode}
             journey={journey}
+            template={campaign.template}
           />
         </div>
       </div>
@@ -796,6 +798,7 @@ function CampaignEditor({
           <BuilderSection number="3" title="Build the DM journey" description="Edit the messages, button labels, app destination, and follow-up timing.">
             <DmJourneyEditor
               journey={form.journey}
+              template={form.template}
               onChange={(journey) => setForm((current) => ({ ...current, journey }))}
               errors={journeyErrors}
             />
@@ -853,6 +856,7 @@ function CampaignEditor({
               post={selectedPosts[0]}
               postMode={form.postMode}
               journey={form.journey}
+              template={form.template}
             />
           </div>
         </aside>
@@ -915,20 +919,38 @@ const FOLLOW_UP_META: Record<MindsetCampaignFollowUpKey, { label: string; trigge
   downloadCheck: { label: 'App not opened', trigger: 'After a tracked link click' },
   useCheck: { label: 'First rep not started', trigger: 'After the app is opened' },
   feedbackCheck: { label: 'Ask for feedback', trigger: 'After the first rep is completed' },
+  resourceOffer: { label: 'Other resources', trigger: 'After the athlete positively engages with Vault' },
 };
+
+function followUpKeysForTemplate(
+  template: MindsetCampaignTemplate
+): MindsetCampaignFollowUpKey[] {
+  return template === 'vault_tracker_download'
+    ? MINDSET_FOLLOW_UP_KEYS
+    : MINDSET_FOLLOW_UP_KEYS.filter((key) => key !== 'resourceOffer');
+}
 
 function DmJourneyEditor({
   journey,
+  template,
   onChange,
   errors,
 }: {
   journey: MindsetCampaignJourney;
+  template: MindsetCampaignTemplate;
   onChange: (journey: MindsetCampaignJourney) => void;
   errors: string[];
 }) {
   const [activeStep, setActiveStep] = useState<JourneyEditorStep>('opening');
   const [activeFollowUp, setActiveFollowUp] = useState<MindsetCampaignFollowUpKey>('noClick');
-  const enabledFollowUps = MINDSET_FOLLOW_UP_KEYS.filter((key) => journey.followUps[key].enabled).length;
+  const availableFollowUps = followUpKeysForTemplate(template);
+  const enabledFollowUps = availableFollowUps.filter((key) => journey.followUps[key].enabled).length;
+
+  useEffect(() => {
+    if (!followUpKeysForTemplate(template).includes(activeFollowUp)) {
+      setActiveFollowUp('noClick');
+    }
+  }, [activeFollowUp, template]);
 
   const updateJourney = <K extends keyof Omit<MindsetCampaignJourney, 'followUps'>>(
     key: K,
@@ -1055,7 +1077,7 @@ function DmJourneyEditor({
               <JourneyPanelHeading title="Set milestone follow-ups" detail="Choose what sends, when it sends, and what the athlete sees." />
               <div className="mt-5 space-y-4">
                 <div className="grid gap-1 sm:grid-cols-2">
-                  {MINDSET_FOLLOW_UP_KEYS.map((key) => {
+                  {availableFollowUps.map((key) => {
                     const followUp = journey.followUps[key];
                     return (
                       <button
@@ -1111,6 +1133,7 @@ function DmJourneyEditor({
                       <CharacterCount current={journey.followUps[activeFollowUp].message.length} maximum={500} />
                     </label>
                     {activeFollowUp === 'noClick' && <p className="mt-3 text-[11px] leading-5 text-slate-500">This check-in is sent as a normal text message with no button.</p>}
+                    {activeFollowUp === 'resourceOffer' && <p className="mt-3 text-[11px] leading-5 text-slate-500">Vault only. It sends once after a positive reply, stays inside the Instagram messaging window, and is cancelled if the athlete messages again first.</p>}
                   </div>
                 </div>
               </div>
@@ -1218,6 +1241,7 @@ function InstagramPreview({
   post,
   postMode,
   journey,
+  template,
 }: {
   accountUsername: string;
   keyword: string;
@@ -1226,6 +1250,7 @@ function InstagramPreview({
   post?: InstagramPost;
   postMode: MindsetCampaignPostMode;
   journey: MindsetCampaignJourney;
+  template: MindsetCampaignTemplate;
 }) {
   const [view, setView] = useState<'comment' | 'dm'>('comment');
   const [dmStep, setDmStep] = useState<'opening' | 'link' | 'followup'>('opening');
@@ -1233,7 +1258,8 @@ function InstagramPreview({
   const [replyIndex, setReplyIndex] = useState(0);
   const currentReply = replies[replyIndex % Math.max(replies.length, 1)] || 'Your public reply appears here.';
   const imageUrl = post?.thumbnailUrl || post?.mediaUrl;
-  const enabledFollowUps = MINDSET_FOLLOW_UP_KEYS.filter((key) => journey.followUps[key].enabled);
+  const enabledFollowUps = followUpKeysForTemplate(template)
+    .filter((key) => journey.followUps[key].enabled);
   const visibleFollowUp = journey.followUps[previewFollowUp].enabled
     ? previewFollowUp
     : enabledFollowUps[0];

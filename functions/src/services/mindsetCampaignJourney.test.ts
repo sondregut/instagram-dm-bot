@@ -5,6 +5,7 @@ import {
   DEFAULT_VAULT_CAMPAIGN_JOURNEY,
   mindsetCampaignFollowUpDelayMs,
   normalizeMindsetCampaignJourney,
+  VAULT_RESOURCE_FOLLOW_UP_MESSAGE,
   validateMindsetCampaignJourney,
 } from './mindsetCampaignJourney';
 
@@ -23,6 +24,8 @@ test('normalizes legacy campaigns to the complete default journey', () => {
   );
   assert.equal(DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps.noClick.delayMinutes, 8 * 60);
   assert.equal(DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps.useCheck.delayMinutes, 8 * 60);
+  assert.equal(DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps.resourceOffer.enabled, false);
+  assert.equal(DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps.resourceOffer.message, '');
   assert.equal(
     DEFAULT_MINDSET_CAMPAIGN_JOURNEY.linkMessage,
     'here you go! hope you like it'
@@ -61,6 +64,13 @@ test('provides an isolated Vault journey with the exact requested handoff link',
   assert.doesNotMatch(JSON.stringify(journey), /Athlete Mindset|mental rep/i);
   assert.equal(journey.followUps.noClick.delayMinutes, 8 * 60);
   assert.equal(journey.followUps.useCheck.delayMinutes, 8 * 60);
+  assert.equal(journey.followUps.resourceOffer.enabled, true);
+  assert.equal(journey.followUps.resourceOffer.delayMinutes, 8 * 60);
+  assert.equal(journey.followUps.resourceOffer.message, VAULT_RESOURCE_FOLLOW_UP_MESSAGE);
+  assert.match(journey.followUps.resourceOffer.message, /stavhopp\.no\/coaching/);
+  assert.match(journey.followUps.resourceOffer.message, /stavhopp\.no\/shop/);
+  assert.match(journey.followUps.resourceOffer.message, /athletemindset\.app\/app/);
+  assert.doesNotMatch(journey.followUps.resourceOffer.message, /—|\?$/);
   assert.deepEqual(
     validateMindsetCampaignJourney(journey, 'vault_tracker_download'),
     []

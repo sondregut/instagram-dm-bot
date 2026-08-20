@@ -360,7 +360,7 @@ export interface InstagramPost {
 export type MindsetCampaignStatus = 'draft' | 'test' | 'live' | 'paused';
 export type MindsetCampaignPostMode = 'any' | 'specific' | 'next';
 export type MindsetCampaignTemplate = 'athlete_mindset_download' | 'vault_tracker_download';
-export type MindsetCampaignFollowUpKey = 'noClick' | 'downloadCheck' | 'useCheck' | 'feedbackCheck';
+export type MindsetCampaignFollowUpKey = 'noClick' | 'downloadCheck' | 'useCheck' | 'feedbackCheck' | 'resourceOffer';
 
 export interface MindsetCampaignFollowUp {
   enabled: boolean;

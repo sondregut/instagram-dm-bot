@@ -74,6 +74,7 @@ const FOLLOW_UP_TYPES = [
   'download_check',
   'use_check',
   'feedback_check',
+  'resource_offer',
   'subscription_check',
 ] as const;
 
@@ -469,7 +470,8 @@ async function reserveUnansweredFollowUp(
   expectedLastUserInteractionAt: admin.firestore.Timestamp,
   expectedAccountId: string,
   expectedInstagramUserId: string,
-  expectedOwnerUserId: string
+  expectedOwnerUserId: string,
+  allowCompletedStage: boolean = false
 ): Promise<{ allowed: boolean; reason?: 'user_replied' | 'paused' | 'terminal' | 'limit' | 'isolation' }> {
   return db.runTransaction(async (transaction) => {
     const snapshot = await transaction.get(ref);
@@ -484,7 +486,8 @@ async function reserveUnansweredFollowUp(
       return { allowed: false, reason: 'isolation' as const };
     }
     if (current.automationPaused) return { allowed: false, reason: 'paused' as const };
-    if (CLOSED_FUNNEL_STAGES.has(current.stage)) {
+    if (CLOSED_FUNNEL_STAGES.has(current.stage)
+        && !(allowCompletedStage && current.stage === 'completed')) {
       return { allowed: false, reason: 'terminal' as const };
     }
     if (!current.lastUserInteractionAt
@@ -562,13 +565,15 @@ async function handleMindsetAction(
     return;
   }
 
+  const template = templateForLead(lead);
+  const journey = journeyForLead(lead);
   const plan = buildMindsetActionPlan(
     action,
     lead.stage,
     buildMindsetActivationUrl(lead.linkToken),
     {
-      template: templateForLead(lead),
-      journey: journeyForLead(lead),
+      template,
+      journey,
     }
   );
   if (plan) {
@@ -625,6 +630,16 @@ async function handleMindsetAction(
       }
     } else if (plan.nextStage === 'completed') {
       await cancelPendingFollowUps(lead.id, 'conversation_completed');
+      if (template === 'vault_tracker_download'
+          && (action === 'used' || action === 'feedback_positive')
+          && journey.followUps.resourceOffer.enabled) {
+        const updated = { ...lead, stage: plan.nextStage, lastUserInteractionAt: now };
+        await scheduleFollowUp(
+          updated,
+          'resource_offer',
+          mindsetCampaignFollowUpDelayMs(journey.followUps.resourceOffer)
+        );
+      }
     } else if (action === 'trial_claimed' || action === 'trial_started' || action === 'subscribed') {
       await cancelPendingFollowUps(lead.id, `manual_${action}`);
     } else if (action === 'downloaded') {
@@ -917,6 +932,11 @@ export async function processMindsetFollowUps(): Promise<number> {
         processed++;
         continue;
       }
+      const journey = journeyForLead(lead);
+      const isVaultResourceOffer = item.type === 'resource_offer'
+        && templateForLead(lead) === 'vault_tracker_download'
+        && lead.stage === 'completed'
+        && journey.followUps.resourceOffer.enabled;
       if (item.type === 'subscription_check') {
         await doc.ref.update({ status: 'cancelled_policy_removed', updatedAt: now });
         processed++;
@@ -937,7 +957,7 @@ export async function processMindsetFollowUps(): Promise<number> {
         'subscribed',
         'completed',
         'human_handoff',
-      ].includes(lead.stage)) {
+      ].includes(lead.stage) && !isVaultResourceOffer) {
         await doc.ref.update({ status: 'cancelled_terminal_stage', updatedAt: now });
         continue;
       }
@@ -949,7 +969,6 @@ export async function processMindsetFollowUps(): Promise<number> {
       let sent = false;
       let message = '';
       let nextStage: MindsetStage | null = null;
-      const journey = journeyForLead(lead);
 
       if (item.type === 'link_reminder'
           && journey.followUps.noClick.enabled
@@ -972,6 +991,8 @@ export async function processMindsetFollowUps(): Promise<number> {
           && lead.firstRepCompletedAt) {
         message = journey.followUps.feedbackCheck.message;
         nextStage = 'awaiting_feedback';
+      } else if (isVaultResourceOffer) {
+        message = journey.followUps.resourceOffer.message;
       }
 
       if (message) {
@@ -980,7 +1001,8 @@ export async function processMindsetFollowUps(): Promise<number> {
           lead.lastUserInteractionAt,
           account.id,
           lead.instagramUserId,
-          account.userId
+          account.userId,
+          isVaultResourceOffer
         );
         if (!reservation.allowed) {
           const status = reservation.reason === 'limit'

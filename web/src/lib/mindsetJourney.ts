@@ -5,6 +5,17 @@ import type {
   MindsetCampaignTemplate,
 } from './firebase';
 
+export const VAULT_RESOURCE_FOLLOW_UP_MESSAGE = `btw, I also have a few other pole vault resources if you’re interested
+
+1:1 coaching
+https://www.stavhopp.no/coaching
+
+training programs
+https://www.stavhopp.no/shop
+
+mental training
+https://www.athletemindset.app/app`;
+
 export const DEFAULT_MINDSET_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
   openingMessage: "Click below to get the link to download Athlete Mindset!\n\nIf you don't see the button, just reply link\n\nAppreciate you,\nSondre",
   openingButtonText: 'Send me the link',
@@ -31,6 +42,11 @@ export const DEFAULT_MINDSET_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
       enabled: true,
       delayMinutes: 5,
       message: 'How did your first mental rep feel?',
+    },
+    resourceOffer: {
+      enabled: false,
+      delayMinutes: 8 * 60,
+      message: '',
     },
   },
 };
@@ -61,6 +77,11 @@ export const DEFAULT_VAULT_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
       enabled: true,
       delayMinutes: 5,
       message: 'How did logging your first session in Vault feel?',
+    },
+    resourceOffer: {
+      enabled: true,
+      delayMinutes: 8 * 60,
+      message: VAULT_RESOURCE_FOLLOW_UP_MESSAGE,
     },
   },
 };
@@ -97,6 +118,7 @@ export const MINDSET_FOLLOW_UP_KEYS: MindsetCampaignFollowUpKey[] = [
   'downloadCheck',
   'useCheck',
   'feedbackCheck',
+  'resourceOffer',
 ];
 
 function textValue(value: unknown, fallback: string): string {
@@ -126,7 +148,7 @@ function followUpValue(
 ): MindsetCampaignFollowUp {
   const message = textValue(value?.message, fallback.message);
   return {
-    enabled: value?.enabled !== false,
+    enabled: typeof value?.enabled === 'boolean' ? value.enabled : fallback.enabled,
     delayMinutes: typeof value?.delayMinutes === 'number' && Number.isFinite(value.delayMinutes)
       ? Math.round(value.delayMinutes)
       : fallback.delayMinutes,
@@ -153,6 +175,7 @@ export function normalizeMindsetCampaignJourney(
       downloadCheck: followUpValue('downloadCheck', followUps.downloadCheck, defaults.followUps.downloadCheck),
       useCheck: followUpValue('useCheck', followUps.useCheck, defaults.followUps.useCheck),
       feedbackCheck: followUpValue('feedbackCheck', followUps.feedbackCheck, defaults.followUps.feedbackCheck),
+      resourceOffer: followUpValue('resourceOffer', followUps.resourceOffer, defaults.followUps.resourceOffer),
     },
   };
 }
