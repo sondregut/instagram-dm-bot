@@ -1,3 +1,4 @@
+import { writeNovaMessage, queueNovaLead, recordNovaOutbound, isExplicitNovaReply, novaRecordId } from '../services/novaSpeedRecords';
 import * as admin from 'firebase-admin';
 import { createHash } from 'crypto';
 import { matchesCommentKeyword } from '../utils/commentKeywordMatching';
@@ -111,7 +112,7 @@ async function processWebhookEvents(entry: any[], mode: BotMode): Promise<void> 
     // The handle reserves a silent route; delivery requires verified immutable IDs.
     if (isNovaSpeedScope(account)) {
       for (const message of Array.isArray(event.messaging) ? event.messaging : []) {
-        await handleNovaSpeedMessage(message, account);
+        if (!await handleNovaSpeedNoteOrEcho(message, account)) await handleNovaSpeedMessage(message, account);
       }
       for (const change of Array.isArray(event.changes) ? event.changes : []) {
         if (change.field === 'comments') await handleNovaSpeedComment(change.value, account, Date.now());
@@ -323,7 +324,7 @@ async function readGuard(tx: FirebaseFirestore.Transaction, a: InstagramAccount,
   ]);
   const current = account.data() as InstagramAccount | undefined;
   const state = session.data();
-  return { current, state, mindset: lead.data(), allowed: isNovaSpeedEnabled(a) && isNovaSpeedEnabled(current)
+  return { current, state, gate: gate.data(), mindset: lead.data(), allowed: isNovaSpeedEnabled(a) && isNovaSpeedEnabled(current)
     && !blocked(gate.data(), lead.data(), state) && (!state || sessionMatches(state, a, r)) };
 }
 async function fresh(a: InstagramAccount, r: string) {
@@ -359,7 +360,11 @@ export async function handleNovaSpeedComment(event: any, a: InstagramAccount, re
     const guard = await fresh(a, r);
     if (!guard.allowed || guard.state?.commentId !== event.id
       || !novaOwnsSharedConversation(a, guard.state, guard.mindset)) return;
-    const accepted = await sendInstagramCommentPrivateReplyOnce(event.id, NOVASPEED_PRIVATE, guard.current!, expiresAt);
+    await recordNovaOutbound(a, guard.state, 'opening:' + event.id, NOVASPEED_PRIVATE, 'attempt_reserved');
+    let providerMessageId: string | undefined;
+    const accepted = await sendInstagramCommentPrivateReplyOnce(event.id, NOVASPEED_PRIVATE, guard.current!, expiresAt,
+      (_accepted, id) => { providerMessageId = id; });
+    await recordNovaOutbound(a, guard.state, 'opening:' + event.id, NOVASPEED_PRIVATE, accepted ? 'accepted' : 'not_confirmed', providerMessageId);
     await ref.update({ privateReplyStatus: accepted ? 'accepted' : 'not_confirmed', updatedAt: stamp() });
     if (!accepted) return; // An uncertain response is permanently reserved, never replayed.
     await db.runTransaction(async tx => {
@@ -385,6 +390,7 @@ export async function handleNovaSpeedComment(event: any, a: InstagramAccount, re
  * retain their original handlers. No MINDSET documents are modified here.
  */
 export async function handleSharedNovaSpeedMessage(event: any, a: InstagramAccount): Promise<boolean> {
+  if (await handleNovaSpeedNoteOrEcho(event, a)) return true;
   if (a.username !== 'sondre_pv' || !isNovaSpeedEnabled(a) || !validNovaId(event?.sender?.id)
     || event.recipient?.id !== a.instagramAccountId || event.sender.id === a.instagramAccountId
     || event.message?.is_echo || event.message?.reply_to?.story || event.message?.attachments
@@ -421,7 +427,7 @@ export async function handleNovaSpeedMessage(event: any, a: InstagramAccount): P
     || typeof event?.message?.mid !== 'string' || !event.message.mid || event.message.mid.length > 2048
     || event.recipient?.id !== a.instagramAccountId || event.sender.id === a.instagramAccountId
     || event.message.is_echo || event.message.reply_to?.story || event.message.attachments || event.postback
-    || typeof event.message.text !== 'string' || event.message.text.length > 2000) return;
+    || typeof event.message.text !== 'string' || event.message.text.length > 20000) return;
   const r = event.sender.id, text = event.message.text, mid = event.message.mid;
   const inboundAt = Number(event.timestamp), expiresAt = inboundAt + 24 * 60 * 60 * 1000 - 60_000;
   if (!Number.isFinite(inboundAt) || inboundAt > Date.now() + 60_000 || Date.now() >= expiresAt) return;
@@ -434,6 +440,10 @@ export async function handleNovaSpeedMessage(event: any, a: InstagramAccount): P
     const [guard, seen, lead] = await Promise.all([readGuard(tx, a, r), tx.get(receipt), tx.get(leadRef)]);
     if (seen.exists || !isNovaSpeedEnabled(guard.current)) return null;
     if (stop || handoff) {
+      if (guard.allowed && guard.state?.status === 'awaiting_email' && novaOwnsSharedConversation(a, guard.state, guard.mindset)
+        && millis(guard.state.expiresAt) > Date.now()) {
+        writeNovaMessage(tx, a, guard.state, 'incoming:' + mid, text, 'Incoming', inboundAt, 'received', mid);
+      }
       // Never overwrite a mismatched conversation or another brand's data.
       if (guard.state && !sessionMatches(guard.state, a, r)) return null;
       tx.create(receipt, { accountId: a.id, instagramUserId: r, status: 'stopped', createdAt: stamp() });
@@ -448,12 +458,14 @@ export async function handleNovaSpeedMessage(event: any, a: InstagramAccount): P
     const existing = lead.data();
     if (existing && (existing.accountId !== a.id || existing.userId !== a.userId || existing.instagramUserId !== r)) return null;
     tx.create(receipt, { accountId: a.id, instagramUserId: r, status: 'reserved', createdAt: stamp() });
+    writeNovaMessage(tx, a, s, 'incoming:' + mid, text, 'Incoming', inboundAt, 'received', mid);
     if (email) {
       tx.set(leadRef, { id: leadRef.id, userId: a.userId, accountId: a.id, instagramUserId: r,
         username: s.username || '', email, source: 'comment', automationId: 'novaspeed-comment-email',
-        sourceCommentId: s.commentId, sourceMessageId: mid, purpose: 'Requested NovaSpeed product information',
+        sourceCommentId: s.commentId, sourceMessageId: mid, conversationId: `${a.id}_${r}_${s.commentId}`, purpose: 'Requested NovaSpeed product information',
         emailVerified: false, marketingSubscribed: false, followUpEmailSent: false, createdAt: stamp() });
       tx.update(session, { status: 'email_collected', emailLeadId: leadRef.id, updatedAt: stamp() });
+      queueNovaLead(tx, a, s, leadRef.id);
       return NOVASPEED_THANKS;
     }
     if (s.invalidPrompted) return null;
@@ -464,9 +476,47 @@ export async function handleNovaSpeedMessage(event: any, a: InstagramAccount): P
   try {
     const guard = await fresh(a, r);
     if (!guard.allowed || !novaOwnsSharedConversation(a, guard.state, guard.mindset)) return;
-    const accepted = await sendInstagramDMOnce(r, response, guard.current!, expiresAt);
+    await recordNovaOutbound(a, guard.state, 'response:' + mid, response, 'attempt_reserved');
+    let providerMessageId: string | undefined;
+    const accepted = await sendInstagramDMOnce(r, response, guard.current!, expiresAt, (_accepted, id) => { providerMessageId = id; });
+    await recordNovaOutbound(a, guard.state, 'response:' + mid, response, accepted ? 'accepted' : 'not_confirmed', providerMessageId);
     await receipt.update({ status: accepted ? 'accepted' : 'not_confirmed', updatedAt: stamp() });
   } catch {
     await receipt.update({ status: 'outcome_uncertain', updatedAt: stamp() });
   }
+}
+
+/** Save only explicit post-capture NovaSpeed notes or campaign-linked manual echoes.
+ * Shared-account personal messages and other campaigns never inherit attribution. */
+export async function handleNovaSpeedNoteOrEcho(event: any, a: InstagramAccount): Promise<boolean> {
+  const echo = event?.message?.is_echo === true;
+  const r = echo ? event?.recipient?.id : event?.sender?.id;
+  const ownerId = echo ? event?.sender?.id : event?.recipient?.id;
+  const text = event?.message?.text, mid = event?.message?.mid, at = Number(event?.timestamp);
+  if (!isNovaSpeedEnabled(a) || !validNovaId(r) || ownerId !== a.instagramAccountId || r === a.instagramAccountId
+    || typeof text !== 'string' || !text || text.length > 20000 || typeof mid !== 'string' || !mid || mid.length > 2048
+    || event.message.reply_to?.story || event.message.attachments || event.message.quick_reply || event.postback
+    || !Number.isFinite(at) || at > Date.now() + 60000 || at < Date.now() - 24 * 3600000) return false;
+  const guard = await fresh(a, r), s = guard.state;
+  if (!s || !isNovaSpeedEnabled(guard.current) || guard.gate?.optedOut || s.status === 'opted_out'
+    || !sessionMatches(s, a, r) || !novaOwnsSharedConversation(a, s, guard.mindset)
+    || millis(s.expiresAt) <= Date.now() || at < millis(s.reservedAt) - 60000
+    || (!echo && !['email_collected', 'human_handoff'].includes(s.status)) || !['awaiting_email', 'email_collected', 'human_handoff'].includes(s.status)) return false;
+  if (/^\s*(?:mindset|link|vault|jump|speed)[\s.!?,]*$/i.test(text) || isLinkOptOut(text) || requiresMindsetHumanHandoff(text)) return false;
+  // A provider echo already linked to a recorded bot message is a duplicate.
+  const link = await db.collection('novaspeed_message_links').doc(novaRecordId(a.id, mid)).get();
+  if (echo && link.exists) return true;
+  if (!await isExplicitNovaReply(a, s, event)) return false;
+  return db.runTransaction(async tx => {
+    const current = await readGuard(tx, a, r);
+    const ref = receiptRef(a, 'note', createHash('sha256').update(mid).digest('hex'));
+    const seen = await tx.get(ref);
+    if (seen.exists) return true;
+    if (!isNovaSpeedEnabled(current.current) || current.gate?.optedOut || current.state?.status === 'opted_out'
+      || current.state?.commentId !== s.commentId || !novaOwnsSharedConversation(a, current.state, current.mindset)) return false;
+    const id = writeNovaMessage(tx, a, s, (echo ? 'manual:' : 'incoming:') + mid, text, echo ? 'Outgoing' : 'Incoming', at, echo ? 'accepted' : 'received', mid);
+    if (!id) return false;
+    tx.create(ref, { accountId: a.id, ownerUserId: a.userId, campaignId: 'novaspeed-comment-email', status: 'note_saved', createdAt: stamp() });
+    return true; // No automated reply is sent for these notes.
+  });
 }

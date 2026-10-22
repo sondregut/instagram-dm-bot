@@ -267,7 +267,8 @@ export async function sendInstagramDMOnce(
   recipientId: string,
   message: string,
   account: InstagramAccount,
-  expiresAtMs: number
+  expiresAtMs: number,
+  observeResult?: (accepted: boolean, messageId?: string) => void
 ): Promise<boolean> {
   if (isFacebookAccount(account) || !Number.isFinite(expiresAtMs) || Date.now() >= expiresAtMs) return false;
   if (!await protectFollowerOutbound(account, recipientId, message)) return false;
@@ -280,6 +281,8 @@ export async function sendInstagramDMOnce(
     message: { text: truncateMessage(message) },
   }, accessToken.startsWith('IG'));
   if (result.success) await recordSentMessage(recipientId, 'dm', account.id);
+  // Optional observation is used only by the NovaSpeed conversation recorder.
+  observeResult?.(result.success, typeof result.data?.message_id === 'string' ? result.data.message_id : undefined);
   // Ambiguous failures are not retried: Meta has no client idempotency key here.
   return result.success;
 }
@@ -347,7 +350,8 @@ type InstagramRecipient = { id: string } | { comment_id: string };
 
 /** Reserved comment event: one attempt, no host fallback, delayed queue or retry. */
 export async function sendInstagramCommentPrivateReplyOnce(commentId: string, message: string,
-  account: InstagramAccount, expiresAtMs: number): Promise<boolean> {
+  account: InstagramAccount, expiresAtMs: number,
+  observeResult?: (accepted: boolean, messageId?: string) => void): Promise<boolean> {
   if (isFacebookAccount(account) || !Number.isFinite(expiresAtMs) || Date.now() >= expiresAtMs
     || !await protectFollowerOutbound(account, undefined, message)) return false;
   const rate = await checkRateLimit(account.id); if (!rate.allowed) return false;
@@ -356,6 +360,7 @@ export async function sendInstagramCommentPrivateReplyOnce(commentId: string, me
   const result = await graphRequest('/me/messages', token, 'POST',
     { recipient: { comment_id: commentId }, message: { text: truncateMessage(message) } }, true);
   if (result.success) await recordSentMessage(commentId, 'dm', account.id);
+  observeResult?.(result.success, typeof result.data?.message_id === 'string' ? result.data.message_id : undefined);
   return result.success;
 }
 

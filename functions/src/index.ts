@@ -1533,3 +1533,6 @@ export const getFlowStats = functions.https.onCall(async (data, context) => {
 
   return stats;
 });
+
+// NovaSpeed-only lead/message outbox; existing runtime identity, no automatic email.
+export { syncNovaSpeedSheet } from "./services/novaSpeedSheetSync";
