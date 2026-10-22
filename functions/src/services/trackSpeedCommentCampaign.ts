@@ -7,6 +7,8 @@ import { matchesCommentKeyword } from '../utils/commentKeywordMatching';
 import { getBotMode, isMindsetModeActive } from '../utils/runtimeMode';
 
 export const TRACKSPEED_COMMENT_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+export const TRACKSPEED_PUBLIC_NEXT_STEP = 'Check your DMs for the next step 👋';
+export const TRACKSPEED_PUBLIC_FOLLOW = 'Make sure you follow @trackspeed_app, then tap Following in your DMs so I can send you the link 👋';
 export const isTrackSpeedEventId = (value: unknown): value is string =>
   typeof value === 'string' && /^[a-zA-Z0-9_-]{1,200}$/.test(value);
 
@@ -22,7 +24,7 @@ export function trackSpeedCommentCampaign(account: InstagramAccount): MindsetCam
   return { id: `trackspeed-comment-${account.id}-speed`, ownerUserId: account.userId,
     accountId: account.id, name: 'TrackSpeed SPEED comments', keyword: 'SPEED',
     template: 'trackspeed_download', status: 'live', postIds: [], postMode: 'any',
-    publicReplyEnabled: false, publicReplyText: '', journey, isSystem: true };
+    publicReplyEnabled: true, publicReplyText: TRACKSPEED_PUBLIC_NEXT_STEP, journey, isSystem: true };
 }
 
 export function resolveTrackSpeedCommentCampaign(account: InstagramAccount, event: {

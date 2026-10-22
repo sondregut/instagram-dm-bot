@@ -18,11 +18,14 @@ const campaigns=require(base+'/services/mindsetCampaigns');
 const direct=require(base+'/services/followerDirectKeywords');
 const instagram=require(base+'/services/instagram');
 const verification=require(base+'/services/followerVerification');
-const sends=[],checks=[],fallbacks=[];
-let follows=true,onVerify=null,privateOutcome=true,sequence=0,activeAccount=a;
+const sends=[],checks=[],fallbacks=[],publicSends=[];
+let follows=true,onVerify=null,privateOutcome=true,publicOutcome=true,sequence=0,activeAccount=a,followSource='meta',followAge=0,publicRateAllowed=true;
+const limiter=require(base+'/utils/rateLimiter');
+limiter.checkRateLimit=async accountId=>{assert.equal(accountId,a.id);return{allowed:publicRateAllowed,remaining:100,resetAt:new Date(Date.now()+3600000)}};
+limiter.recordSentMessage=async(_id,type,accountId)=>{assert.equal(type,'comment_reply');assert.equal(accountId,a.id)};
 verification.verifyFollower=async(account,recipient,fresh)=>{
   checks.push({accountId:account.id,recipient,fresh}); if(onVerify)await onVerify(recipient);
-  return{follows,checkedAt:Date.now(),source:'offline-fixture'};
+  return{follows,checkedAt:Date.now()-followAge,source:followSource};
 };
 instagram.sendInstagramPrivateReply=async(commentId,text,buttons,account)=>{
   assert.equal(policy.containsOutboundLink(text),false);assert.equal(account.id,a.id);
@@ -37,7 +40,13 @@ instagram.sendInstagramGatePromptOnce=async(recipient,text,buttons)=>{
   assert.equal(policy.containsOutboundLink(text),false);sends.push({kind:'prompt',recipient,text,buttons});return true;
 };
 const blocked=name=>async()=>{fallbacks.push(name);throw Error('Forbidden fallback: '+name)};
-instagram.replyToComment=blocked('public reply');
+instagram.replyToComment=async(commentId,text,account)=>{
+  assert.equal(account.id,a.id);assert.equal(policy.containsOutboundLink(text),false);
+  const receipt=(await db.collection('mindset_comment_events').doc(a.id+'_'+commentId).get()).data();
+  assert.equal(receipt.privateReplyStatus,'accepted');assert.equal(receipt.publicReplyStatus,'attempt_reserved');
+  publicSends.push({commentId,text,accountId:account.id});
+  if(publicOutcome==='throw')throw Error('Synthetic uncertain public response');return publicOutcome;
+};
 for(const[file,names]of[
  ['handlers/jumpDirectMessage',['handleJumpDirectMessage']],['handlers/linkRecovery',['handleLinkRecovery']],
  ['handlers/mindsetHandler',['handleMindsetMessage']],['handlers/messageHandler',['handleMessage']],
@@ -59,23 +68,24 @@ async function post(entry,valid=true){const body={object:'instagram',entry:[{id:
  let status;const res={status:s=>{status=s;return res},send:()=>{},sendStatus:s=>{status=s}};
  await instagramWebhook({method:'POST',body,rawBody,get:()=>valid?signature:'invalid'},res);return status;}
 const routeComment=c=>post({changes:[{field:'comments',value:c}]}),routeDm=e=>post({messaging:[e]});
-async function quiet(action){const n=sends.length,k=checks.length;await action();assert.equal(sends.length,n);assert.equal(checks.length,k);assert.deepEqual(fallbacks,[])}
+async function quiet(action){const n=sends.length,k=checks.length,p=publicSends.length;await action();assert.equal(sends.length,n);assert.equal(checks.length,k);assert.equal(publicSends.length,p);assert.deepEqual(fallbacks,[])}
 async function start(recipient){const c=comment(recipient);await routeComment(c);return(await lead(recipient).get()).data()}
 test.before(async()=>{await db.collection('accounts').doc(a.id).set(a);
  const c=config.trackSpeedCommentCampaign(a);for(const keyword of ['MINDSET','JUMP','SPEED'])await db.collection('mindset_campaigns').doc('untrusted-'+keyword).set({...c,id:'untrusted-'+keyword,keyword});});
 test.after(()=>{assert.deepEqual(fallbacks,[]);scoped.TRACKSPEED_ONLY_IDENTITY=null});
 
-test('only comment campaign exists; no DM routes, generic campaigns, public replies or follow-ups',()=>{
+test('only comment campaign exists with approved acknowledgment; no DM entry, generic campaigns or follow-ups',()=>{
  const c=config.trackSpeedCommentCampaign(a);assert.equal(c.keyword,'SPEED');assert.equal(c.journey.linkMessage,'Here you go!');
  assert.equal(c.journey.destinationUrl,'https://apps.apple.com/us/app/trackspeed-sprint-timer/id6757509163');
- assert.equal(c.publicReplyEnabled,false);assert(Object.values(c.journey.followUps).every(f=>!f.enabled));
+ assert.equal(c.publicReplyEnabled,true);assert.equal(c.publicReplyText,config.TRACKSPEED_PUBLIC_NEXT_STEP);assert(Object.values(c.journey.followUps).every(f=>!f.enabled));
  assert.deepEqual(direct.followerDirectKeywordCampaigns(a),[]);assert.equal(campaigns.isMindsetAccountAllowed(a),false);
  assert.equal(campaigns.runtimeMindsetCampaign(a),null);assert.equal(require(base+'/services/appLinkFollowUps').appLinkFollowUpsEnabled(a),false);
  assert.equal(policy.isVerifiedFollowerGateAccount(a),false);
 });
 test('standalone SPEED comments accept case, surrounding punctuation and whitespace',async()=>{
  for(const text of ['SPEED','Speed!!!!','speed',' SpEeD! ','\n\tSPEED\t','(speed)','“SPEED!”','...SPEED...','[SPEED]','🔥 SPEED 🏃‍♂️','speeeedddd','S P E E D','ＳＰＥＥＤ','SPEED\u200b','#SPEED','@SPEED','<speed>']){
-  const r='match-'+(++sequence),n=sends.length;await routeComment(comment(r,text));assert.equal(sends.length,n+1,text);
+  const r='match-'+(++sequence),n=sends.length,p=publicSends.length;await routeComment(comment(r,text));assert.equal(sends.length,n+1,text);
+  assert.equal(publicSends.length,p+1);assert.equal(publicSends.at(-1).text,config.TRACKSPEED_PUBLIC_NEXT_STEP);
   assert.equal(sends.at(-1).kind,'private');assert.match(sends.at(-1).text,/@trackspeed_app/);
   assert.equal((await lead(r).get()).data().triggerKeyword,'SPEED');
  }
@@ -96,15 +106,15 @@ test('valid comment button and explicit LINK continuation deliver exactly the re
   assert.equal(sends.length,n+1);assert.equal(sends.at(-1).text,'Here you go!\n\nhttps://apps.apple.com/us/app/trackspeed-sprint-timer/id6757509163');
   assert.equal(checks.at(-1).fresh,true);}
 });
-test('duplicate comment, concurrent delivery and recipient cooldown each allow one private prompt',async()=>{
- const c=comment('dupe'),n=sends.length;await Promise.all([routeComment(c),routeComment(c)]);await routeComment(c);
- await routeComment(comment('dupe'));assert.equal(sends.length,n+1);
+test('duplicate comment, concurrent delivery and recipient cooldown allow one private and one public reply',async()=>{
+ const c=comment('dupe'),n=sends.length,p=publicSends.length;await Promise.all([routeComment(c),routeComment(c)]);await routeComment(c);
+ await routeComment(comment('dupe'));assert.equal(sends.length,n+1);assert.equal(publicSends.length,p+1);
 });
 test('unknown provider outcome and old processing receipt are never automatically replayed',async()=>{
- for(const outcome of [false,'throw']){const c=comment('uncertain-'+outcome);privateOutcome=outcome;const n=sends.length;
+ for(const outcome of [false,'throw']){const c=comment('uncertain-'+outcome);privateOutcome=outcome;const n=sends.length,p=publicSends.length,k=checks.length;
   try{await routeComment(c)}finally{privateOutcome=true}
   const receipt=db.collection('mindset_comment_events').doc(a.id+'_'+c.id);
-  await receipt.update({processingStartedAt:stamp(Date.now()-3600000)});await routeComment(c);assert.equal(sends.length,n+1);
+  await receipt.update({processingStartedAt:stamp(Date.now()-3600000)});await routeComment(c);assert.equal(sends.length,n+1);assert.equal(publicSends.length,p);assert.equal(checks.length,k);
  }
 });
 test('new SPEED comment may start after 24-hour recipient cooldown; same comment still cannot replay',async()=>{
@@ -173,4 +183,62 @@ test('a fresh account pause after event routing blocks comment delivery',async()
  const n=sends.length;await db.collection('accounts').doc(a.id).update({automationMode:'paused'});
  try{await routeComment(comment('fresh-account-pause'));assert.equal(sends.length,n)}
  finally{await db.collection('accounts').doc(a.id).set(a)}
+});
+
+test('public wording uses a fresh reliable false only; true, unknown, stale and cached states stay neutral',async()=>{
+ try{for(const c of [
+  {value:true,source:'meta',age:0,state:'following'},
+  {value:false,source:'meta',age:0,state:'not_following'},
+  {value:null,source:'meta_error',age:0,state:'unknown'},
+  {value:false,source:'cache',age:0,state:'unknown'},
+  {value:false,source:'meta',age:3600000,state:'unknown'},
+ ]){follows=c.value;followSource=c.source;followAge=c.age;const e=comment('public-state-'+(++sequence)),p=publicSends.length;
+  await routeComment(e);assert.equal(publicSends.length,p+1);
+  assert.equal(publicSends.at(-1).text,c.state==='not_following'?config.TRACKSPEED_PUBLIC_FOLLOW:config.TRACKSPEED_PUBLIC_NEXT_STEP);
+  const receipt=(await db.collection('mindset_comment_events').doc(a.id+'_'+e.id).get()).data();
+  assert.equal(receipt.publicFollowerState,c.state);assert.equal(receipt.publicReplyStatus,'accepted');
+ }}finally{follows=true;followSource='meta';followAge=0}
+});
+test('follower lookup exception gives a neutral public acknowledgment without releasing a link',async()=>{
+ const e=comment('public-lookup-error'),p=publicSends.length,n=sends.length;
+ onVerify=async()=>{throw Error('Synthetic lookup error')};
+ try{await routeComment(e);assert.equal(sends.length,n+1);assert.equal(publicSends.length,p+1);
+  assert.equal(publicSends.at(-1).text,config.TRACKSPEED_PUBLIC_NEXT_STEP);
+ }finally{onVerify=null}
+});
+test('public rejection or uncertain response never repeats private or public sends on redelivery',async()=>{
+ for(const outcome of [false,'throw']){const e=comment('public-failure-'+outcome),p=publicSends.length,n=sends.length;publicOutcome=outcome;
+  try{await routeComment(e)}finally{publicOutcome=true}
+  const receipt=(await db.collection('mindset_comment_events').doc(a.id+'_'+e.id).get()).data();
+  assert.equal(receipt.privateReplyStatus,'accepted');assert.equal(receipt.publicReplyStatus,'not_confirmed');
+  await routeComment(e);assert.equal(sends.length,n+1);assert.equal(publicSends.length,p+1);
+ }
+});
+test('public rate limit withholds acknowledgment and never resends the accepted private prompt',async()=>{
+ const e=comment('public-rate-limit'),p=publicSends.length,n=sends.length;publicRateAllowed=false;
+ try{await routeComment(e)}finally{publicRateAllowed=true}
+ await routeComment(e);assert.equal(publicSends.length,p);assert.equal(sends.length,n+1);
+ assert.equal((await db.collection('mindset_comment_events').doc(a.id+'_'+e.id).get()).data().publicReplyStatus,'not_confirmed');
+});
+test('repeated Following checks never add a public reply',async()=>{
+ const r='public-follow-retries';follows=false;
+ try{const l=await start(r),p=publicSends.length;await routeDm(dm(r,'Following','mindset:send_link:'+l.linkToken));
+  const s=(await state(r).get()).data();await state(r).update({lastAttemptAt:stamp(Date.now()-11000)});
+  follows=true;const event=dm(r,'Following','follow_gate:check:'+s.checkToken);await routeDm(event);await routeDm(event);
+  assert.equal(publicSends.length,p);assert.equal(sends.at(-1).kind,'link');
+ }finally{follows=true}
+});
+test('pre-release private-only completed receipts never gain historical public replies',async()=>{
+ const e=comment('historical-private-only');await db.collection('mindset_comment_events').doc(a.id+'_'+e.id).set({
+  accountId:a.id,eventId:e.id,status:'completed',privateReplyStatus:'accepted',privateReplySent:true,publicReplySent:null,
+  processingStartedAt:stamp(Date.now()-3600000),updatedAt:stamp(Date.now()-3600000)});
+ await quiet(()=>routeComment(e));
+});
+test('handoff, identity or account pause during the public follower lookup suppresses acknowledgment',async()=>{
+ for(const kind of ['handoff','wrong-owner','account-pause']){const e=comment('public-guard-'+kind),p=publicSends.length;
+  onVerify=async r=>{if(kind==='handoff')await state(r).set({accountId:a.id,humanHandoff:true,handoffHadLead:false});
+   else if(kind==='wrong-owner')await lead(r).update({ownerUserId:'someone-else'});
+   else await db.collection('accounts').doc(a.id).update({automationMode:'paused'});};
+  try{await routeComment(e);assert.equal(publicSends.length,p)}finally{onVerify=null;await db.collection('accounts').doc(a.id).set(a)}
+ }
 });

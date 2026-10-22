@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { isTrackSpeedOnlyScope } from '../services/trackSpeedOnlyPolicy';
-import { resolveTrackSpeedCommentCampaign, trackSpeedCommentCampaign, TRACKSPEED_COMMENT_COOLDOWN_MS } from '../services/trackSpeedCommentCampaign';
+import { resolveTrackSpeedCommentCampaign, trackSpeedCommentCampaign, TRACKSPEED_COMMENT_COOLDOWN_MS, TRACKSPEED_PUBLIC_NEXT_STEP, TRACKSPEED_PUBLIC_FOLLOW } from '../services/trackSpeedCommentCampaign';
+import { verifyFollower, FollowerResult } from '../services/followerVerification';
 import { isSondreVaultCampaign } from '../services/vaultTrainingDestination';
 import * as admin from 'firebase-admin';
 import { db, InstagramAccount } from '../firebase';
@@ -47,7 +48,7 @@ import {
 } from '../services/mindsetTrackingLogic';
 import { isMindsetModeActive } from '../utils/runtimeMode';
 import { checkRateLimit, recordSentMessage } from '../utils/rateLimiter';
-import { isFollowerGateEnabled, isFollowerGateRecipientBlocked, FOLLOWER_GATE_ACCOUNTS } from '../services/followerGatePolicy';
+import { isFollowerGateEnabled, isFollowerGateRecipientBlocked, FOLLOWER_GATE_ACCOUNTS, FOLLOWER_CHECK_MAX_AGE_MS } from '../services/followerGatePolicy';
 import {
   isMindsetAccountAllowed,
   resolveMindsetCampaignForComment,
@@ -285,6 +286,49 @@ async function claimTrackSpeedComment(eventId: string, recipientId: string, acco
   });
 }
 
+/** One public acknowledgment for a newly admitted comment, only after its private prompt.
+ * Following-button retries never enter this path; historical receipts cannot be reclaimed. */
+async function acknowledgeTrackSpeedComment(event: MindsetCommentEvent, account: InstagramAccount,
+  campaignSessionId: string): Promise<boolean> {
+  const receipt = db.collection(COMMENT_EVENTS).doc(`${account.id}_${event.id}`);
+  const conversationId = buildMindsetConversationId(account.id, event.from.id);
+  // Preserve confirmed private acceptance even if the follower/public lookup later fails.
+  await receipt.update({ privateReplySent: true, privateReplyStatus: 'accepted', updatedAt: admin.firestore.Timestamp.now() });
+  let result: FollowerResult;
+  try { result = await verifyFollower(account, event.from.id, true); }
+  catch { result = { follows: null, checkedAt: Date.now(), source: 'request_error' }; }
+  const age = Date.now() - result.checkedAt;
+  const reliableNotFollowing = result.follows === false && result.source === 'meta'
+    && !result.errorCode && age >= 0 && age <= FOLLOWER_CHECK_MAX_AGE_MS;
+  const message = reliableNotFollowing ? TRACKSPEED_PUBLIC_FOLLOW : TRACKSPEED_PUBLIC_NEXT_STEP;
+  const admitted = await db.runTransaction(async tx => {
+    const [seen, currentAccount, lead, gate] = await Promise.all([
+      tx.get(receipt), tx.get(db.collection('accounts').doc(account.id)),
+      tx.get(db.collection(LEADS).doc(conversationId)),
+      tx.get(db.collection('follower_gate_recipients').doc(conversationId)),
+    ]);
+    const current = { ...currentAccount.data(), id: account.id } as InstagramAccount;
+    const state = lead.data();
+    if (seen.data()?.privateReplyStatus !== 'accepted' || seen.data()?.publicReplyStatus
+      || !currentAccount.exists || !trackSpeedCommentCampaign(current)
+      || state?.accountId !== account.id || state?.ownerUserId !== account.userId || state?.instagramUserId !== event.from.id
+      || state?.campaignSessionId !== campaignSessionId || state?.initialCommentId !== event.id
+      || state?.automationPaused || state?.stage === 'human_handoff'
+      || isFollowerGateRecipientBlocked(gate.data(), state)) return null;
+    tx.update(receipt, { publicReplyStatus: 'attempt_reserved', publicFollowerState: reliableNotFollowing ? 'not_following'
+      : result.follows === true && result.source === 'meta' && !result.errorCode && age >= 0 && age <= FOLLOWER_CHECK_MAX_AGE_MS ? 'following' : 'unknown',
+      publicFollowerCheckSource: result.source, updatedAt: admin.firestore.Timestamp.now() });
+    return current;
+  });
+  if (!admitted) return false;
+  let accepted = false;
+  try { accepted = await sendFollowerGatePublicReply(event.id, message, admitted); }
+  catch { /* A transport/storage uncertainty is reserved permanently, never resent. */ }
+  await receipt.update({ publicReplyStatus: accepted ? 'accepted' : 'not_confirmed',
+    publicReplySent: accepted, updatedAt: admin.firestore.Timestamp.now() });
+  return accepted;
+}
+
 export async function handleMindsetComment(
   event: MindsetCommentEvent,
   account: InstagramAccount
@@ -459,7 +503,7 @@ export async function handleMindsetComment(
       await receipt.set({ status: 'completed', privateReplySent: false,
         privateReplyStatus: 'not_confirmed', publicReplySent: false,
         updatedAt: admin.firestore.Timestamp.now() }, { merge: true });
-      const publicReplySent = campaign.publicReplyEnabled === false ? null
+      const publicReplySent = speedOnly || campaign.publicReplyEnabled === false ? null
         : await sendFollowerGatePublicReply(event.id, `DM me ${campaign.keyword} to get started — I couldn’t confirm the first DM.`, account);
       await receipt.set({ publicReplySent, updatedAt: admin.firestore.Timestamp.now() }, { merge: true });
       return true;
@@ -471,7 +515,7 @@ export async function handleMindsetComment(
   }
 
   // Reply publicly only after the private message succeeded so we never claim a DM was sent when it was not.
-  const publicReply = campaign.publicReplyEnabled === false
+  const publicReply = speedOnly || campaign.publicReplyEnabled === false
     ? null
     : constrainMindsetAIReply(
       publicReplyForAccount(
@@ -482,7 +526,9 @@ export async function handleMindsetComment(
       ),
       220
     );
-  const publicReplySent = publicReply
+  const publicReplySent = speedOnly
+    ? await acknowledgeTrackSpeedComment(event, account, campaignSessionId)
+    : publicReply
     ? isFollowerGateEnabled(account)
       ? await sendFollowerGatePublicReply(event.id, publicReply, account)
       : await replyToComment(event.id, publicReply, account)
