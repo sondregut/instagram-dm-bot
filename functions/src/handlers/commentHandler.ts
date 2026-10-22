@@ -2,7 +2,8 @@ import { db, Automation, InstagramAccount } from '../firebase';
 import { sendInstagramDM, getInstagramUser } from '../services/instagram';
 import { generateAIResponse } from '../services/ai';
 import { buildSystemPrompt } from '../services/accounts';
-import { containsKeyword, sanitizeInput } from '../utils/validators';
+import { sanitizeInput } from '../utils/validators';
+import { findCommentKeyword, compareCommentKeywords } from '../utils/commentKeywordMatching';
 import * as admin from 'firebase-admin';
 
 export interface InstagramCommentEvent {
@@ -43,8 +44,12 @@ export async function handleComment(
     .where('isActive', '==', true)
     .get();
 
-  for (const doc of automations.docs) {
-    const automation = { id: doc.id, ...doc.data() } as Automation;
+  const candidates = automations.docs.map(doc => ({ id: doc.id, ...doc.data() } as Automation))
+    .filter(automation => automation.accountId === account.id && automation.userId === account.userId)
+    .sort((left, right) => compareCommentKeywords(commentText,
+      findCommentKeyword(commentText, left.trigger.keywords) || '',
+      findCommentKeyword(commentText, right.trigger.keywords) || ''));
+  for (const automation of candidates) {
 
     // Check if automation is limited to specific posts
     if (automation.trigger.postIds && automation.trigger.postIds.length > 0) {
@@ -54,7 +59,7 @@ export async function handleComment(
     }
 
     // Check for keyword match
-    const matchedKeyword = containsKeyword(commentText, automation.trigger.keywords);
+    const matchedKeyword = findCommentKeyword(commentText, automation.trigger.keywords);
 
     if (matchedKeyword) {
       console.log(`Keyword "${matchedKeyword}" matched in comment, triggering DM to ${username}`);

@@ -6,6 +6,7 @@ import './firebase';
 
 // Import webhook handler
 import { instagramWebhook } from './webhooks/instagram';
+import { facebookWebhook } from './webhooks/facebook';
 
 // Import handlers for scheduled functions
 import { checkNewFollowers, getFollowerStats } from './handlers/followerHandler';
@@ -25,6 +26,10 @@ import {
   getUserAccounts,
   updateAccountSettings,
 } from './auth/instagram-oauth';
+import {
+  facebookOAuthCallback,
+  getFacebookOAuthUrl,
+} from './auth/facebook-oauth';
 
 // Import knowledge base functions
 import {
@@ -76,6 +81,7 @@ import { shouldRefreshProfilePicture } from './services/instagramProfileLogic';
  * URL: https://<region>-<project>.cloudfunctions.net/instagramWebhook
  */
 export { instagramWebhook };
+export { facebookWebhook };
 
 // ============================================
 // OAUTH ENDPOINTS
@@ -105,6 +111,9 @@ export { getUserAccounts };
  * Update account settings (AI personality, etc.)
  */
 export { updateAccountSettings };
+
+/** Connect a Facebook Page and subscribe it to the isolated Page webhook. */
+export { getFacebookOAuthUrl, facebookOAuthCallback };
 
 // ============================================
 // KNOWLEDGE BASE ENDPOINTS
@@ -540,11 +549,12 @@ export const getLeadsApi = functions.https.onCall(async (data, context) => {
   }
 
   const userId = context.auth.uid;
-  const { accountId, source, hasEmail, hasPhone, limit, startAfter } = data || {};
+  const { accountId, source, automationId, hasEmail, hasPhone, limit, startAfter } = data || {};
 
   return await getLeads(userId, {
     accountId,
     source,
+    automationId,
     hasEmail,
     hasPhone,
     limit: limit || 50,
@@ -561,11 +571,13 @@ export const exportLeads = functions.https.onCall(async (data, context) => {
   }
 
   const userId = context.auth.uid;
-  const { accountId, source, startDate, endDate } = data || {};
+  const { accountId, source, automationId, hasEmail, startDate, endDate } = data || {};
 
   const csv = await exportLeadsToCSV(userId, {
     accountId,
     source,
+    automationId,
+    hasEmail,
     startDate: startDate ? new Date(startDate) : undefined,
     endDate: endDate ? new Date(endDate) : undefined,
   });

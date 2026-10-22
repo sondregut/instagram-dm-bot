@@ -27,6 +27,7 @@ import {
   getStoredMindsetCampaigns,
   getActiveStoredMindsetCampaigns,
   isMindsetTargetAccount,
+  mindsetCampaignModeForAccount,
   MindsetCampaign,
   MINDSET_CAMPAIGNS_COLLECTION,
   MINDSET_NEXT_POST_LOCKS_COLLECTION,
@@ -196,10 +197,12 @@ async function requireOwnedMindsetAccount(
   if (account.userId !== ownerUserId) {
     throw new functions.https.HttpsError('permission-denied', 'Not your Instagram account');
   }
-  if (!isMindsetTargetAccount(account)) {
+  const isFacebookWorkspace = account.platform === 'facebook'
+    && account.isMindsetWorkspace === true;
+  if (!isMindsetTargetAccount(account) && !isFacebookWorkspace) {
     throw new functions.https.HttpsError(
       'permission-denied',
-      'The Athlete Mindset DM workspace is restricted to the configured Instagram account'
+      'This account is not enabled for the protected app-download workspace'
     );
   }
   return account;
@@ -466,12 +469,13 @@ export const getMindsetOverview = functions.https.onCall(async (data, context) =
   ]);
   const now = Date.now();
   const dayAgo = now - 24 * 60 * 60 * 1000;
+  const campaignMode = mindsetCampaignModeForAccount(account);
   const ownerCampaigns = await reconcileNextPostCampaigns(
     account,
     storedCampaigns.filter((campaign) => campaign.ownerUserId === ownerUserId),
-    getBotMode()
+    campaignMode
   );
-  const systemCampaign = shouldIncludeRuntimeMindsetCampaign(ownerCampaigns, getBotMode())
+  const systemCampaign = shouldIncludeRuntimeMindsetCampaign(ownerCampaigns, campaignMode)
     ? runtimeMindsetCampaign(account)
     : null;
   const campaigns = [
@@ -483,11 +487,12 @@ export const getMindsetOverview = functions.https.onCall(async (data, context) =
     account: {
       id: account.id,
       username: account.username,
+      platform: account.platform || 'instagram',
       connectionStatus: account.connectionStatus,
     },
     runtime: {
-      mode: getBotMode(),
-      manychatKeywordProtected: getBotMode() === 'test',
+      mode: campaignMode,
+      manychatKeywordProtected: account.platform !== 'facebook' && getBotMode() === 'test',
       systemKeyword: systemCampaign?.keyword || null,
     },
     metrics: {
@@ -719,13 +724,14 @@ export const simulateMindsetConversationApi = functions.https.onCall(async (data
 export const getMindsetCampaignsApi = functions.https.onCall(async (data, context) => {
   const ownerUserId = requireAuth(context);
   const account = await requireOwnedMindsetAccount(ownerUserId, data?.accountId);
+  const campaignMode = mindsetCampaignModeForAccount(account);
   const storedCampaigns = await getStoredMindsetCampaigns(account.id);
   const ownerCampaigns = await reconcileNextPostCampaigns(
     account,
     storedCampaigns.filter((campaign) => campaign.ownerUserId === ownerUserId),
-    getBotMode()
+    campaignMode
   );
-  const systemCampaign = shouldIncludeRuntimeMindsetCampaign(ownerCampaigns, getBotMode())
+  const systemCampaign = shouldIncludeRuntimeMindsetCampaign(ownerCampaigns, campaignMode)
     ? runtimeMindsetCampaign(account)
     : null;
   const campaigns = [
@@ -736,8 +742,8 @@ export const getMindsetCampaignsApi = functions.https.onCall(async (data, contex
   return {
     campaigns: campaigns.map(serializeCampaign),
     runtime: {
-      mode: getBotMode(),
-      manychatKeywordProtected: getBotMode() === 'test',
+      mode: campaignMode,
+      manychatKeywordProtected: account.platform !== 'facebook' && getBotMode() === 'test',
     },
   };
 });
@@ -774,7 +780,7 @@ export const saveMindsetCampaignApi = functions.https.onCall(async (data, contex
     : DEFAULT_MINDSET_PUBLIC_REPLY_TEXT;
   const template = normalizeMindsetCampaignTemplate(data?.template);
   const journey = normalizeMindsetCampaignJourney(data?.journey, template);
-  const mode = getBotMode();
+  const mode = mindsetCampaignModeForAccount(account);
   const validationErrors = validateMindsetCampaignInput({
     name,
     keyword,

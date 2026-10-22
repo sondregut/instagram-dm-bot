@@ -91,9 +91,36 @@ test('preserves editable message, link, and follow-up settings', () => {
 
   assert.equal(journey.openingMessage, 'Want the app link?');
   assert.equal(journey.linkButtonText, 'Open app');
+  assert.equal(journey.destinationUrl, 'https://apps.apple.com/app/id6757452747');
   assert.equal(journey.followUps.noClick.enabled, false);
   assert.equal(journey.followUps.noClick.delayMinutes, 8);
   assert.equal(journey.followUps.downloadCheck.message, DEFAULT_MINDSET_CAMPAIGN_JOURNEY.followUps.downloadCheck.message);
+});
+
+test('migrates an existing Athlete Mindset website destination to the App Store', () => {
+  assert.equal(
+    normalizeMindsetCampaignJourney({ destinationUrl: 'https://www.athletemindset.app/app?source=reel' }).destinationUrl,
+    'https://apps.apple.com/app/id6757452747'
+  );
+  assert.equal(
+    normalizeMindsetCampaignJourney({ destinationUrl: 'https://example.com/custom-app' }).destinationUrl,
+    'https://example.com/custom-app'
+  );
+});
+
+test('TrackSpeed and TrackJump journeys use their own App Store links without follow-ups', () => {
+  for (const [template, destination] of [
+    ['trackspeed_download', 'https://apps.apple.com/us/app/trackspeed-sprint-timer/id6757509163'],
+    ['trackjump_download', 'https://apps.apple.com/us/app/trackjump-jump-height-rsi/id6809517672'],
+  ] as const) {
+    const journey = normalizeMindsetCampaignJourney({
+      followUps: { noClick: { enabled: true, delayMinutes: 30, message: 'Reminder' } },
+    }, template);
+    assert.equal(journey.destinationUrl, destination);
+    assert.match(journey.openingMessage, new RegExp(template === 'trackspeed_download' ? 'TrackSpeed' : 'TrackJump'));
+    assert.equal(journey.followUps.noClick.enabled, false);
+    assert.deepEqual(validateMindsetCampaignJourney(journey, template), []);
+  }
 });
 
 test('validates Instagram limits, secure links, timing, and copy style', () => {

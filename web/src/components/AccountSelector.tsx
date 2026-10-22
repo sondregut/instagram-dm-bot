@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useState, useEffect, ReactNode } from 'react';
 import { cloudFunctions, InstagramAccount } from '@/lib/firebase';
+import { FacebookLogo, InstagramLogo } from '@phosphor-icons/react';
 import { cn } from '@/lib/utils';
 import { styles } from '@/lib/styles';
 import { isDashboardReviewMode, reviewAccount } from '@/lib/mindsetReview';
@@ -20,6 +21,12 @@ interface AccountContextType {
 }
 
 const AccountContext = createContext<AccountContextType | undefined>(undefined);
+
+export function accountDisplayName(account: InstagramAccount): string {
+  return account.platform === 'facebook'
+    ? account.pageName || account.username
+    : `@${account.username}`;
+}
 
 export function useAccount() {
   const context = useContext(AccountContext);
@@ -139,7 +146,7 @@ export function AccountSelector({ className, showLabel = true }: AccountSelector
         <AccountAvatar account={accounts[0]} size="sm" />
         {showLabel && (
           <span className="text-sm font-medium text-ink">
-            @{accounts[0].username}
+            {accountDisplayName(accounts[0])}
           </span>
         )}
       </div>
@@ -156,7 +163,7 @@ export function AccountSelector({ className, showLabel = true }: AccountSelector
       >
         {accounts.map((account) => (
           <option key={account.id} value={account.id}>
-            @{account.username}
+            {account.platform === 'facebook' ? 'Facebook' : 'Instagram'} · {accountDisplayName(account)}
           </option>
         ))}
       </select>
@@ -215,7 +222,17 @@ export function AccountAvatar({ account, size = 'sm', showStatus = true }: Accou
           sizeClasses[size]
         )}
       >
-        {initial}
+        {account.profilePictureUrl ? (
+          <img
+            src={account.profilePictureUrl}
+            alt=""
+            className="h-full w-full rounded-full object-cover"
+          />
+        ) : account.platform === 'facebook' ? (
+          <FacebookLogo size={16} weight="fill" />
+        ) : account.platform === 'instagram' ? (
+          <InstagramLogo size={16} weight="bold" />
+        ) : initial}
       </div>
       {showStatus && (
         <div
@@ -256,7 +273,10 @@ export function AccountCard({ account, isSelected, onClick, showDetails = false 
       <AccountAvatar account={account} size="md" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <p className="font-medium text-ink truncate">@{account.username}</p>
+          <p className="font-medium text-ink truncate">{accountDisplayName(account)}</p>
+          <span className="rounded-full bg-surface-sunken px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
+            {account.platform}
+          </span>
           {account.connectionStatus !== 'connected' && (
             <span
               className={cn(

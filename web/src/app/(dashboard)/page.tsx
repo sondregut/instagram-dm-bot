@@ -16,7 +16,7 @@ import {
   UsersThree,
   WarningCircle,
 } from '@phosphor-icons/react';
-import { useAccount } from '@/components/AccountSelector';
+import { accountDisplayName, useAccount } from '@/components/AccountSelector';
 import { InstagramAvatar } from '@/components/InstagramAvatar';
 import { loadMindsetOverview } from '@/lib/mindsetData';
 import { isDashboardReviewMode } from '@/lib/mindsetReview';
@@ -46,13 +46,16 @@ export default function DashboardPage() {
   const metrics = data?.metrics;
   const campaigns = data?.campaigns || [];
   const activeCampaigns = campaigns.filter((campaign) => campaign.status === 'test' || campaign.status === 'live');
+  const platform = selectedAccount.platform || 'instagram';
+  const channelName = platform === 'facebook' ? 'Facebook' : 'Instagram';
+  const selectedAccountName = accountDisplayName(selectedAccount);
 
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-semibold text-emerald-700">Instagram DM operations</p>
+            <p className="text-sm font-semibold text-emerald-700">{channelName} messaging operations</p>
             {reviewMode && (
               <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-emerald-800">
                 Local preview data
@@ -60,7 +63,7 @@ export default function DashboardPage() {
             )}
           </div>
           <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em] text-slate-950 sm:text-4xl">Welcome back, Sondre.</h1>
-          <p className="mt-2 text-sm text-slate-600">Here is how @{selectedAccount.username}&apos;s DM funnel is moving.</p>
+          <p className="mt-2 text-sm text-slate-600">Here is how {selectedAccountName}&apos;s messaging funnel is moving.</p>
         </div>
         <div className="flex gap-2">
           <Link href="/conversations" className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 transition hover:border-slate-400">
@@ -113,7 +116,7 @@ export default function DashboardPage() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Conversion journey</p>
-            <h2 className="mt-1 text-xl font-semibold tracking-[-0.025em] text-slate-950">From Instagram comment to paid athlete</h2>
+            <h2 className="mt-1 text-xl font-semibold tracking-[-0.025em] text-slate-950">From {channelName} comment to paid athlete</h2>
           </div>
           <p className="text-xs text-slate-500">Tracked links plus verified in-app events</p>
         </div>
@@ -144,7 +147,7 @@ export default function DashboardPage() {
           ) : data?.recentConversations.length ? (
             <div className="divide-y divide-slate-100">
               {data.recentConversations.map((conversation) => (
-                <RecentConversation key={conversation.id} conversation={conversation} />
+                <RecentConversation key={conversation.id} conversation={conversation} platform={platform} />
               ))}
             </div>
           ) : (
@@ -160,12 +163,14 @@ export default function DashboardPage() {
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
             <div className="flex items-center gap-2 text-emerald-900">
               <ShieldCheck size={20} weight="fill" />
-              <h2 className="font-semibold">Controlled test is isolated</h2>
+              <h2 className="font-semibold">Channel test is isolated</h2>
             </div>
             <dl className="mt-4 space-y-3 text-sm">
-              <StatusRow label="Account" value={`@${selectedAccount.username}`} />
+              <StatusRow label="Account" value={selectedAccountName} />
               <StatusRow label="Active keyword" value={data?.runtime.systemKeyword || 'Not active'} mono />
-              <StatusRow label="MINDSET" value={data?.runtime.manychatKeywordProtected ? 'Protected for ManyChat' : 'Available'} />
+              {platform === 'instagram' && (
+                <StatusRow label="MINDSET" value={data?.runtime.manychatKeywordProtected ? 'Protected for ManyChat' : 'Available'} />
+              )}
               <StatusRow label="Bot mode" value={data?.runtime.mode || 'Loading'} />
             </dl>
           </div>
@@ -241,18 +246,26 @@ function FunnelStep({ icon: Icon, label, value, rate, loading, first = false, la
   );
 }
 
-function RecentConversation({ conversation }: { conversation: MindsetConversation }) {
+function RecentConversation({
+  conversation,
+  platform,
+}: {
+  conversation: MindsetConversation;
+  platform: 'instagram' | 'facebook';
+}) {
   const tone = mindsetStageTone(conversation.stage);
+  const displayName = platform === 'facebook' ? conversation.username : `@${conversation.username}`;
   return (
     <Link href={`/conversations?conversation=${conversation.id}`} className="grid gap-3 px-5 py-4 transition hover:bg-slate-50 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:px-6">
       <div className="flex min-w-0 items-center gap-3">
         <InstagramAvatar
           username={conversation.username}
+          platform={platform}
           src={conversation.profilePictureUrl}
         />
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="font-semibold text-slate-950">@{conversation.username}</p>
+            <p className="font-semibold text-slate-950">{displayName}</p>
             <StageBadge label={mindsetStageLabel(conversation.stage)} tone={tone} />
           </div>
           <p className="mt-1 truncate text-sm text-slate-500">{latestConversationMessage(conversation)}</p>
@@ -295,8 +308,8 @@ function NoAccountState() {
   return (
     <div className="mx-auto max-w-lg rounded-2xl border border-slate-200 bg-white px-6 py-14 text-center">
       <Megaphone size={32} className="mx-auto text-slate-300" />
-      <h1 className="mt-4 text-xl font-semibold text-slate-950">Connect @sondre_pv</h1>
-      <p className="mt-2 text-sm leading-6 text-slate-500">The operator dashboard needs the Instagram account connection before it can load conversations.</p>
+      <h1 className="mt-4 text-xl font-semibold text-slate-950">Connect a messaging channel</h1>
+      <p className="mt-2 text-sm leading-6 text-slate-500">Connect Instagram or a Facebook Page before the dashboard can load conversations.</p>
       <Link href="/settings" className="mt-5 inline-flex h-10 items-center rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white">Open settings</Link>
     </div>
   );

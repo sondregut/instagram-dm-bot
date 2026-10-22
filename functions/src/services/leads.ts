@@ -124,7 +124,9 @@ export async function getLeads(
   }
 
   if (filters?.source) {
-    query = query.where('source', '==', filters.source);
+    query = filters.source === 'comment_to_dm'
+      ? query.where('source', 'in', ['comment_to_dm', 'comment'])
+      : query.where('source', '==', filters.source);
   }
 
   if (filters?.automationId) {
@@ -172,6 +174,8 @@ export async function exportLeadsToCSV(
   filters?: {
     accountId?: string;
     source?: Lead['source'];
+    automationId?: string;
+    hasEmail?: boolean;
     startDate?: Date;
     endDate?: Date;
   }
@@ -184,7 +188,13 @@ export async function exportLeadsToCSV(
   }
 
   if (filters?.source) {
-    query = query.where('source', '==', filters.source);
+    query = filters.source === 'comment_to_dm'
+      ? query.where('source', 'in', ['comment_to_dm', 'comment'])
+      : query.where('source', '==', filters.source);
+  }
+
+  if (filters?.automationId) {
+    query = query.where('automationId', '==', filters.automationId);
   }
 
   if (filters?.startDate) {
@@ -198,10 +208,11 @@ export async function exportLeadsToCSV(
   query = query.orderBy('createdAt', 'desc');
 
   const snapshot = await query.get();
-  const leads = snapshot.docs.map(doc => doc.data() as Lead);
+  const leads = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Lead))
+    .filter(lead => !filters?.hasEmail || !!lead.email);
 
   // CSV header
-  const headers = ['Username', 'Email', 'Phone', 'Name', 'Source', 'Tags', 'Created At'];
+  const headers = ['Username', 'Email', 'Phone', 'Name', 'Source', 'Tags', 'Created At', 'Account ID', 'Campaign', 'Lead ID', 'Notes'];
   const rows = leads.map(lead => [
     lead.username,
     lead.email || '',
@@ -210,11 +221,19 @@ export async function exportLeadsToCSV(
     lead.source,
     (lead.tags || []).join('; '),
     lead.createdAt.toDate().toISOString(),
+    lead.accountId,
+    lead.automationId || '',
+    lead.id,
+    lead.notes || '',
   ]);
 
   const csvContent = [
     headers.join(','),
-    ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')),
+    ...rows.map(row => row.map(cell => {
+      const text = String(cell);
+      const safe = /^[\s]*[=+@-]/.test(text) ? `'${text}` : text;
+      return `"${safe.replace(/"/g, '""')}"`;
+    }).join(',')),
   ].join('\n');
 
   return csvContent;

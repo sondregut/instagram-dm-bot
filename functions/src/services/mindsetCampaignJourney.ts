@@ -1,6 +1,7 @@
-import { MINDSET_NO_CLICK_FOLLOW_UP_MESSAGE } from './mindsetFlowLogic';
+import { MINDSET_DIRECT_APP_URL, MINDSET_NO_CLICK_FOLLOW_UP_MESSAGE, buildMindsetDirectAppUrl } from './mindsetFlowLogic';
 import {
   MindsetCampaignTemplate,
+  isLinkOnlyCampaignTemplate,
   normalizeMindsetCampaignTemplate,
 } from './mindsetCampaignProduct';
 
@@ -42,7 +43,7 @@ export const DEFAULT_MINDSET_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
   openingButtonText: 'Send me the link',
   linkMessage: 'here you go! hope you like it',
   linkButtonText: 'Download App',
-  destinationUrl: 'https://athletemindset.app/app',
+  destinationUrl: MINDSET_DIRECT_APP_URL,
   followUps: {
     noClick: {
       enabled: true,
@@ -107,12 +108,41 @@ export const DEFAULT_VAULT_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
   },
 };
 
+function linkOnlyJourney(name: string, destinationUrl: string): MindsetCampaignJourney {
+  return {
+    openingMessage: `Click below to get the ${name} App Store link!\n\nIf you don't see the button, reply link.\n\nAppreciate you,\nSondre`,
+    openingButtonText: 'Send me the link',
+    linkMessage: 'Here you go!',
+    linkButtonText: 'Download App',
+    destinationUrl,
+    followUps: {
+      noClick: { enabled: false, delayMinutes: 8 * 60, message: '' },
+      downloadCheck: { enabled: false, delayMinutes: 30, message: '' },
+      useCheck: { enabled: false, delayMinutes: 8 * 60, message: '' },
+      feedbackCheck: { enabled: false, delayMinutes: 5, message: '' },
+      resourceOffer: { enabled: false, delayMinutes: 8 * 60, message: '' },
+    },
+  };
+}
+
+export const DEFAULT_TRACKSPEED_CAMPAIGN_JOURNEY = linkOnlyJourney(
+  'TrackSpeed',
+  'https://apps.apple.com/us/app/trackspeed-sprint-timer/id6757509163'
+);
+export const DEFAULT_TRACKJUMP_CAMPAIGN_JOURNEY = linkOnlyJourney(
+  'TrackJump',
+  'https://apps.apple.com/us/app/trackjump-jump-height-rsi/id6809517672'
+);
+
 export function defaultMindsetCampaignJourney(
   template: MindsetCampaignTemplate
 ): MindsetCampaignJourney {
-  return template === 'vault_tracker_download'
-    ? DEFAULT_VAULT_CAMPAIGN_JOURNEY
-    : DEFAULT_MINDSET_CAMPAIGN_JOURNEY;
+  switch (template) {
+    case 'vault_tracker_download': return DEFAULT_VAULT_CAMPAIGN_JOURNEY;
+    case 'trackspeed_download': return DEFAULT_TRACKSPEED_CAMPAIGN_JOURNEY;
+    case 'trackjump_download': return DEFAULT_TRACKJUMP_CAMPAIGN_JOURNEY;
+    default: return DEFAULT_MINDSET_CAMPAIGN_JOURNEY;
+  }
 }
 
 const LEGACY_OPENING_MESSAGES = new Set([
@@ -191,7 +221,7 @@ export function normalizeMindsetCampaignJourney(
     const defaults = journeyDefaults.followUps[key];
     const candidate = inputFollowUps[key] || {};
     followUps[key] = {
-      enabled: typeof candidate.enabled === 'boolean'
+      enabled: isLinkOnlyCampaignTemplate(template) ? false : typeof candidate.enabled === 'boolean'
         ? candidate.enabled
         : defaults.enabled,
       delayMinutes: delayValue(candidate.delayMinutes, defaults.delayMinutes),
@@ -204,7 +234,12 @@ export function normalizeMindsetCampaignJourney(
     openingButtonText: textValue(input.openingButtonText, journeyDefaults.openingButtonText),
     linkMessage: linkMessageValue(input.linkMessage, journeyDefaults.linkMessage),
     linkButtonText: textValue(input.linkButtonText, journeyDefaults.linkButtonText),
-    destinationUrl: textValue(input.destinationUrl, journeyDefaults.destinationUrl),
+    destinationUrl: template === 'athlete_mindset_download'
+      && /^https:\/\/(?:www\.)?athletemindset\.app\/app\/?(?:\?|$)/i.test(
+        textValue(input.destinationUrl, journeyDefaults.destinationUrl)
+      )
+      ? buildMindsetDirectAppUrl(textValue(input.destinationUrl, journeyDefaults.destinationUrl))
+      : textValue(input.destinationUrl, journeyDefaults.destinationUrl),
     followUps,
   };
 }

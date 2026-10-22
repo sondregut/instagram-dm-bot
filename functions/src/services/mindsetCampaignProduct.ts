@@ -5,7 +5,13 @@ import {
 
 export type MindsetCampaignTemplate =
   | 'athlete_mindset_download'
-  | 'vault_tracker_download';
+  | 'vault_tracker_download'
+  | 'trackspeed_download'
+  | 'trackjump_download';
+
+export function isLinkOnlyCampaignTemplate(template: MindsetCampaignTemplate): boolean {
+  return template === 'trackspeed_download' || template === 'trackjump_download';
+}
 
 export interface MindsetCampaignProductProfile {
   template: MindsetCampaignTemplate;
@@ -40,7 +46,7 @@ const VAULT_PRODUCT_KNOWLEDGE = `
 ## Product boundaries
 - The confirmed destination for this campaign is the iPhone download handoff supplied by Sondre.
 - The live App Store screen is the only source for current price, billing period, trial, discount, and eligibility terms.
-- Purchases, restore purchase, and subscription management happen through Apple. Never request payment information in Instagram.
+- Purchases, restore purchase, and subscription management happen through Apple. Never request payment information in chat.
 - Do not infer that someone paid or started a trial from their words alone. Treat conversion as verified only when a verified app or subscription event confirms it.
 - Do not ask whether they subscribed, paid, or started a trial.
 - Vault is not available for Android yet. For any Android, Google Play, Samsung, or Pixel availability question, reply exactly: "${ANDROID_AVAILABILITY_REPLY}". This is conditional on demand and is not a promise of an Android release.
@@ -53,10 +59,34 @@ const VAULT_PRODUCT_KNOWLEDGE = `
 - If someone is stuck inside Vault and the exact screen is unclear, ask what screen they see and what they are trying to log. Do not guess.
 
 ## Conversation privacy
-- Treat the current Instagram campaign session as sealed.
+- Treat the current campaign session as sealed.
 - Use only this person's messages from this campaign session, its current stage, verified events for this session, and this product guide.
 - Never mention, quote, summarize, compare with, or infer anything from another user or another product campaign.
 `.trim();
+
+function linkOnlyProfile(
+  template: 'trackspeed_download' | 'trackjump_download',
+  name: string
+): MindsetCampaignProductProfile {
+  return {
+    template,
+    name,
+    shortName: name,
+    scopeDescription: `${name} and its App Store download link`,
+    offTopicExamples: 'training advice, injuries, billing, or unrelated requests',
+    productKnowledge: `This campaign only sends the ${name} App Store link. Other messages go to Sondre for a human reply.`,
+    copy: {
+      downloaded: `Thanks for trying ${name}!`,
+      used: `Thanks for trying ${name}!`,
+      priceObjection: 'The App Store shows the current offer.',
+      onboardingHelp: 'What screen are you on?',
+      complete: `Enjoy ${name}!`,
+      notYet: `Let me know if you need the ${name} link again.`,
+      navigation: 'What screen are you on?',
+      noTime: 'No rush. The link will be here when you need it.',
+    },
+  };
+}
 
 const PROFILES: Record<MindsetCampaignTemplate, MindsetCampaignProductProfile> = {
   athlete_mindset_download: {
@@ -95,12 +125,15 @@ const PROFILES: Record<MindsetCampaignTemplate, MindsetCampaignProductProfile> =
       noTime: 'Understood. When would be a realistic time for you to try Vault?',
     },
   },
+  trackspeed_download: linkOnlyProfile('trackspeed_download', 'TrackSpeed'),
+  trackjump_download: linkOnlyProfile('trackjump_download', 'TrackJump'),
 };
 
 export function normalizeMindsetCampaignTemplate(value: unknown): MindsetCampaignTemplate {
-  return value === 'vault_tracker_download'
-    ? 'vault_tracker_download'
-    : 'athlete_mindset_download';
+  if (value === 'vault_tracker_download'
+      || value === 'trackspeed_download'
+      || value === 'trackjump_download') return value;
+  return 'athlete_mindset_download';
 }
 
 export function mindsetCampaignProduct(

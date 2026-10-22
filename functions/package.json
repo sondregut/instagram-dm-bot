@@ -14,7 +14,8 @@
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
-    "lint": "eslint --ext .ts src/"
+    "lint": "eslint --ext .ts src/",
+    "test:comment-release": "npm run build && node --require ./tests/no-network.cjs --test tests/*.test.cjs lib/services/*.test.js lib/utils/*.test.js"
   },
   "engines": {
     "node": "20"

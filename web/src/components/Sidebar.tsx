@@ -8,20 +8,23 @@ import {
   Gauge,
   GearSix,
   Flask,
+  FacebookLogo,
   InstagramLogo,
   Megaphone,
   ShieldCheck,
   SignOut,
+  UsersThree,
 } from '@phosphor-icons/react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
-import { useAccount } from '@/components/AccountSelector';
+import { accountDisplayName, useAccount } from '@/components/AccountSelector';
 import { isDashboardReviewMode } from '@/lib/mindsetReview';
 
 const navigation = [
   { name: 'Overview', shortName: 'Overview', href: '/', icon: Gauge },
   { name: 'Campaigns', shortName: 'Campaigns', href: '/campaigns', icon: Megaphone },
   { name: 'Live inbox', shortName: 'Inbox', href: '/conversations', icon: ChatsCircle },
+  { name: 'Leads', shortName: 'Leads', href: '/leads', icon: UsersThree },
   { name: 'Test Lab', shortName: 'Test', href: '/test-lab', icon: Flask },
   { name: 'Settings', shortName: 'Settings', href: '/settings', icon: GearSix },
 ];
@@ -38,6 +41,7 @@ export function Sidebar() {
   const { signOut, user } = useAuth();
   const { accounts, selectedAccount, selectAccount, isLoading } = useAccount();
   const reviewMode = isDashboardReviewMode();
+  const activeAccount = selectedAccount || accounts[0] || null;
 
   const handleSignOut = async () => {
     if (!reviewMode) await signOut();
@@ -64,34 +68,36 @@ export function Sidebar() {
             ) : accounts.length > 0 ? (
               <div className="flex items-center gap-3">
                 <span className="grid h-9 w-9 place-items-center rounded-full bg-white text-sm font-bold text-slate-950">
-                  <InstagramLogo size={19} weight="bold" />
+                  {activeAccount?.platform === 'facebook'
+                    ? <FacebookLogo size={19} weight="fill" />
+                    : <InstagramLogo size={19} weight="bold" />}
                 </span>
                 <div className="min-w-0 flex-1">
                   {accounts.length === 1 ? (
-                    <p className="truncate text-sm font-semibold">@{accounts[0].username}</p>
+                    <p className="truncate text-sm font-semibold">{accountDisplayName(accounts[0])}</p>
                   ) : (
                     <select
                       value={selectedAccount?.id || ''}
                       onChange={(event) => selectAccount(event.target.value)}
-                      aria-label="Instagram account"
+                      aria-label="Connected channel"
                       className="w-full appearance-none bg-transparent text-sm font-semibold text-white outline-none"
                     >
                       {accounts.map((account) => (
                         <option key={account.id} value={account.id} className="bg-slate-950">
-                          @{account.username}
+                          {account.platform === 'facebook' ? 'Facebook' : 'Instagram'} · {accountDisplayName(account)}
                         </option>
                       ))}
                     </select>
                   )}
                   <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-400">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                    Instagram connected
+                    {activeAccount?.platform === 'facebook' ? 'Facebook Page' : 'Instagram'} connected
                   </p>
                 </div>
               </div>
             ) : (
               <Link href="/settings" className="text-sm font-semibold text-emerald-300">
-                Connect Instagram
+                Connect a channel
               </Link>
             )}
           </div>
@@ -103,7 +109,7 @@ export function Sidebar() {
               <ShieldCheck size={16} weight="bold" />
               <span className="text-xs font-semibold">Local preview</span>
             </div>
-            <p className="mt-1.5 text-[11px] leading-4 text-slate-400">Sample data. No Instagram messages are sent.</p>
+            <p className="mt-1.5 text-[11px] leading-4 text-slate-400">Sample data. No social messages are sent.</p>
           </div>
         )}
 
@@ -151,7 +157,7 @@ export function Sidebar() {
         </div>
       </aside>
 
-      <nav className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-5 border-t border-slate-200 bg-white/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-12px_30px_-26px_rgba(15,23,42,0.35)] backdrop-blur md:hidden" aria-label="Mobile dashboard navigation">
+      <nav className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-6 border-t border-slate-200 bg-white/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-12px_30px_-26px_rgba(15,23,42,0.35)] backdrop-blur md:hidden" aria-label="Mobile dashboard navigation">
         {navigation.map((item) => {
           const active = isActiveRoute(pathname, item.href);
           return (

@@ -12,7 +12,7 @@ export const MAX_UNANSWERED_MINDSET_FOLLOW_UPS = 2;
 export const MINDSET_CONVERSATION_SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 export const MINDSET_SCOPE_CLASSIFIER_MAX_TOKENS = 200;
 export const MINDSET_NO_CLICK_FOLLOW_UP_MESSAGE = 'hi, just curious what you think of the app so far if you’ve had a chance to try it yet';
-export const MINDSET_DIRECT_APP_URL = 'https://athletemindset.app/app';
+export const MINDSET_DIRECT_APP_URL = 'https://apps.apple.com/app/id6757452747';
 
 export type MindsetMilestoneFollowUp = 'use_check' | 'feedback_check';
 
@@ -105,9 +105,12 @@ export function validateMindsetTestConfiguration(
 }
 
 export function containsConfiguredMindsetKeyword(
-  text: string,
+  text: unknown,
   keyword: string = getConfiguredMindsetKeyword()
 ): boolean {
+  // Meta can send comment change events without text. Treat them as
+  // non-matches so one malformed event cannot abort webhook processing.
+  if (typeof text !== 'string') return false;
   const normalizedKeyword = keyword.trim().toLowerCase();
   if (!normalizedKeyword) return false;
 
@@ -135,6 +138,8 @@ export function chooseMindsetPublicReply(commentId: string, configuredReplies?: 
 
 export function classifyMindsetReply(text: string): MindsetReplyIntent {
   const normalized = normalizeMindsetText(text);
+
+  if (isExplicitMindsetOptOut(normalized)) return 'not_interested';
 
   if (/\b(?:talk|speak|chat|connect|put me in touch)\b.{0,40}\b(?:human|person|sondre|support)\b/.test(normalized)
       || /\b(?:real human|real person|support agent)\b/.test(normalized)) return 'human';
@@ -202,7 +207,7 @@ export function classifyMindsetReplyForStage(
 function isExplicitMindsetOptOut(text: string): boolean {
   const normalized = normalizeMindsetText(text);
   return /\b(?:not interested|changed my mind|not for me|no thanks|rather not|leave me alone|stop messaging me|stop sending|do not message me|don't message me|unsubscribe)\b/.test(normalized)
-    || /\b(?:do not|don't) want (?:the )?(?:app|athlete mindset|vault)\b/.test(normalized);
+    || /\b(?:do not|don't|dont|no longer) (?:want|need) (?:the )?(?:app|link|athlete mindset|vault|trackjump|trackspeed)\b/.test(normalized);
 }
 
 /**
@@ -252,7 +257,7 @@ export function buildMindsetScopeClassifierPrompt(
 ): string {
   const product = mindsetCampaignProduct(normalizeMindsetCampaignTemplate(templateValue));
   const previousMessage = previousAssistantMessage?.trim().slice(0, 500) || '[none]';
-  return `You are a strict routing classifier for the ${product.name} Instagram campaign. You do not write replies.
+  return `You are a strict routing classifier for the ${product.name} comment-to-message campaign. You do not write replies.
 
 Return exactly one label and nothing else:
 IN_SCOPE
@@ -332,6 +337,7 @@ function isAndroidAvailabilityQuestion(normalizedText: string): boolean {
 
 export function isMindsetAppLinkRequest(text: string): boolean {
   const normalized = normalizeMindsetText(text);
+  if (isExplicitMindsetOptOut(normalized)) return false;
   if (/\b(?:do not|don't|never|stop)\b.{0,24}\b(?:send|share|resend|re-send)\b/.test(normalized)) {
     return false;
   }
@@ -376,6 +382,11 @@ export function getMindsetMilestoneFollowUpDelayMs(
 export function buildMindsetDirectAppUrl(destinationUrl?: string): string {
   try {
     const candidate = new URL(destinationUrl || MINDSET_DIRECT_APP_URL);
+    if (candidate.protocol === 'https:' && !candidate.username && !candidate.password
+        && ['athletemindset.app', 'www.athletemindset.app'].includes(candidate.hostname)
+        && candidate.pathname.replace(/\/$/, '') === '/app') {
+      return MINDSET_DIRECT_APP_URL;
+    }
     return candidate.protocol === 'https:' && !candidate.username && !candidate.password
       ? candidate.toString()
       : MINDSET_DIRECT_APP_URL;
@@ -396,7 +407,7 @@ export function buildMindsetDownloadDestination(token: string, destinationUrl?: 
   const fallback = process.env.MINDSET_DOWNLOAD_DESTINATION || MINDSET_DIRECT_APP_URL;
   let url: URL;
   try {
-    const candidate = new URL(destinationUrl || fallback);
+    const candidate = new URL(buildMindsetDirectAppUrl(destinationUrl || fallback));
     url = candidate.protocol === 'https:' && !candidate.username && !candidate.password
       ? candidate
       : new URL(fallback);
@@ -437,7 +448,7 @@ export function buildMindsetAISystemPrompt(
   const campaignGoal = template === 'vault_tracker_download'
     ? 'help this person download Vault, open it, try logging their pole-vault training, and share brief feedback if they choose'
     : 'help this person download Athlete Mindset, get through the personalized setup, experience the first mental-rep preview, understand the in-app offer, and then get real value from the app if access is verified';
-  return `You are the automated Instagram assistant for ${product.name}, an app promoted by Sondre.
+  return `You are the private campaign reply assistant for ${product.name}, an app promoted by Sondre.
 
 Current conversation stage: ${stage}
 Stage guidance: ${stageGuidance}
@@ -461,7 +472,7 @@ Rules:
 - Do not use em dashes.
 - If asked whether you are Sondre, whether you are automated, or who is replying, output exactly [[HANDOFF]] and nothing else.
 - Do not invent features, prices, guarantees, or medical claims.
-- Never ask for payment details or take payment in Instagram. Purchases happen only inside the iOS app, where the App Store shows the current price and trial terms.
+- Never ask for payment details or take payment in chat. Purchases happen only inside the iOS app, where the App Store shows the current price and trial terms.
 - If the person says they already subscribed or started a trial, stop selling and help them get value from the app.
 - Do not pressure or shame the person.
 - Refunds, account access, safety concerns, complaints, and requests for a person are silently routed to Sondre before the model is called.

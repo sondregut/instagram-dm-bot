@@ -22,6 +22,7 @@ import {
 } from './mindsetCampaignJourney';
 import {
   MindsetCampaignTemplate,
+  isLinkOnlyCampaignTemplate,
   normalizeMindsetCampaignTemplate,
 } from './mindsetCampaignProduct';
 
@@ -84,6 +85,27 @@ export async function simulateMindsetTurn(
     ? 'human'
     : classifyMindsetReplyForStage(userMessage, stage);
   const action = quickReplyAction || classifiedAction;
+  if (isLinkOnlyCampaignTemplate(template)) {
+    if (action === 'send_link' || action === 'app_link_request') {
+      return {
+        reply: journey.linkMessage,
+        additionalReplies: [journey.destinationUrl],
+        nextStage: stage === 'awaiting_link_request' ? 'link_sent' : stage,
+        quickReplies: [],
+        buttons: [],
+        createsHandoff: false,
+      };
+    }
+    return {
+      reply: '',
+      additionalReplies: [],
+      nextStage: 'human_handoff',
+      quickReplies: [],
+      buttons: [],
+      createsHandoff: true,
+      handoffReason: 'link_only_campaign_reply',
+    };
+  }
   const mayContinueAfterClosedFunnel = [
     'app_link_request',
     'android_availability',

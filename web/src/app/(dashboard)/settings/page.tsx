@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   ArrowRight,
@@ -9,6 +10,7 @@ import {
   CloudArrowUp,
   Code,
   Fingerprint,
+  FacebookLogo,
   InstagramLogo,
   LinkSimple,
   LockKey,
@@ -20,6 +22,7 @@ import {
 import { useAccount } from '@/components/AccountSelector';
 import { useAuth } from '@/hooks/useAuth';
 import { loadMindsetOverview } from '@/lib/mindsetData';
+import { cloudFunctions } from '@/lib/firebase';
 import { isDashboardReviewMode } from '@/lib/mindsetReview';
 import { cn } from '@/lib/utils';
 
@@ -27,11 +30,73 @@ export default function SettingsPage() {
   const { selectedAccount, accounts, isLoading: accountsLoading } = useAccount();
   const { user } = useAuth();
   const reviewMode = isDashboardReviewMode();
+  const facebookSelected = selectedAccount?.platform === 'facebook';
+  const [connectingInstagram, setConnectingInstagram] = useState(false);
+  const [instagramConnectError, setInstagramConnectError] = useState<string | null>(null);
+  const [instagramConnectNotice, setInstagramConnectNotice] = useState<string | null>(null);
+  const [connectingFacebook, setConnectingFacebook] = useState(false);
+  const [facebookConnectError, setFacebookConnectError] = useState<string | null>(null);
+  const [facebookConnectNotice, setFacebookConnectNotice] = useState<string | null>(null);
   const { data, isLoading } = useQuery({
     queryKey: ['mindset-overview', selectedAccount?.id],
     queryFn: () => loadMindsetOverview(selectedAccount!.id),
     enabled: Boolean(selectedAccount),
   });
+
+  const connectInstagram = async () => {
+    if (reviewMode || connectingInstagram) return;
+    setConnectingInstagram(true);
+    setInstagramConnectError(null);
+    try {
+      const result = await cloudFunctions.getInstagramOAuthUrl({ redirectUrl: '/settings' });
+      window.location.assign(result.data.url);
+    } catch (error) {
+      console.error('Failed to start Instagram connection:', error);
+      setInstagramConnectError('Instagram connection is not configured on the backend yet.');
+      setConnectingInstagram(false);
+    }
+  };
+
+  const connectFacebook = async () => {
+    if (reviewMode || connectingFacebook) return;
+    setConnectingFacebook(true);
+    setFacebookConnectError(null);
+    try {
+      const result = await cloudFunctions.getFacebookOAuthUrl({ redirectUrl: '/settings' });
+      window.location.assign(result.data.url);
+    } catch (error) {
+      console.error('Failed to start Facebook Page connection:', error);
+      setFacebookConnectError('Facebook connection is not configured on the backend yet.');
+      setConnectingFacebook(false);
+    }
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('success') === 'true') {
+      const subscribed = params.get('subscribed') === '1';
+      setInstagramConnectNotice(
+        subscribed
+          ? 'Instagram account connected and subscribed to DM and comment events.'
+          : 'Instagram account saved, but its webhook subscription is pending. Reconnect before enabling automation.'
+      );
+    }
+    if (params.get('error')) {
+      setInstagramConnectError('Instagram could not connect the account. Check account access and try again.');
+    }
+    if (params.get('facebook_success') === 'true') {
+      const pages = Number(params.get('pages') || 0);
+      const subscribed = Number(params.get('subscribed') || 0);
+      setFacebookConnectNotice(
+        pages > 0 && subscribed === pages
+          ? `${pages} Facebook Page${pages === 1 ? '' : 's'} connected in test mode.`
+          : `${pages} Facebook Page${pages === 1 ? '' : 's'} saved. Reconnect if a Page shows “webhook pending.”`
+      );
+    }
+    if (params.get('facebook_error')) {
+      setFacebookConnectError('Facebook could not connect the Page. Check Page access and try again.');
+    }
+  }, []);
 
   if (accountsLoading) return <div className="h-[600px] animate-pulse rounded-2xl bg-white" />;
 
@@ -54,27 +119,82 @@ export default function SettingsPage() {
       )}
 
       <section className="grid gap-5 xl:grid-cols-2">
-        <SettingsCard icon={InstagramLogo} title="Instagram connection" description="The only Instagram account this workspace is allowed to automate.">
-          {accounts.length && selectedAccount ? (
-            <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <span className="grid h-11 w-11 place-items-center rounded-full bg-slate-950 text-white"><InstagramLogo size={22} weight="bold" /></span>
-              <div className="min-w-0 flex-1">
-                <p className="font-semibold text-slate-950">@{selectedAccount.username}</p>
-                <p className="mt-0.5 text-xs text-slate-500">Instagram professional account</p>
-              </div>
-              <StatusPill good={selectedAccount.connectionStatus === 'connected'} label={selectedAccount.connectionStatus} />
+        <SettingsCard icon={InstagramLogo} title="Connected channels" description="Instagram and Facebook stay isolated while sharing the tested app-download journey.">
+          {accounts.length ? (
+            <div className="space-y-3">
+              {accounts.map((account) => {
+                const facebook = account.platform === 'facebook';
+                return (
+                  <div key={account.id} className="flex items-center gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <span className="grid h-11 w-11 place-items-center rounded-full bg-slate-950 text-white">
+                      {facebook
+                        ? <FacebookLogo size={22} weight="fill" />
+                        : <InstagramLogo size={22} weight="bold" />}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-semibold text-slate-950">
+                        {facebook ? account.pageName || account.username : `@${account.username}`}
+                      </p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        {facebook
+                          ? `Facebook Page · ${account.automationMode || 'test'} mode`
+                          : 'Instagram professional account'}
+                      </p>
+                    </div>
+                    <StatusPill
+                      good={account.connectionStatus === 'connected' && account.webhookSubscribed !== false}
+                      label={account.webhookSubscribed === false ? 'webhook pending' : account.connectionStatus}
+                    />
+                  </div>
+                );
+              })}
             </div>
           ) : (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">No Instagram account is connected.</div>
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">No messaging channel is connected.</div>
           )}
-          <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-slate-500"><LockKey size={15} className="mt-0.5 flex-shrink-0" />The backend rejects every account except the configured @sondre_pv account.</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={connectInstagram}
+              disabled={reviewMode || connectingInstagram}
+              className="inline-flex h-10 items-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <InstagramLogo size={17} weight="bold" />
+              {connectingInstagram ? 'Opening Instagram…' : 'Connect Instagram'}
+            </button>
+            <button
+              type="button"
+              onClick={connectFacebook}
+              disabled={reviewMode || connectingFacebook}
+              className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#1877F2] px-4 text-sm font-semibold text-white transition hover:bg-[#1468d4] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <FacebookLogo size={17} weight="fill" />
+              {connectingFacebook ? 'Opening Facebook…' : 'Connect Facebook Page'}
+            </button>
+          </div>
+          {instagramConnectError && <p className="mt-3 text-xs font-medium text-red-700">{instagramConnectError}</p>}
+          {instagramConnectNotice && <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">{instagramConnectNotice}</p>}
+          {facebookConnectError && <p className="mt-3 text-xs font-medium text-red-700">{facebookConnectError}</p>}
+          {facebookConnectNotice && <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">{facebookConnectNotice}</p>}
+          <p className="mt-3 flex items-start gap-2 text-xs leading-5 text-slate-500"><LockKey size={15} className="mt-0.5 flex-shrink-0" />Each channel gets its own account ID, Page or Instagram token, campaigns, contacts, and conversation history.</p>
         </SettingsCard>
 
-        <SettingsCard icon={ShieldCheck} title="Automation safety" description="The boundary that prevents overlap with the live ManyChat flow.">
+        <SettingsCard
+          icon={ShieldCheck}
+          title="Automation safety"
+          description={facebookSelected
+            ? 'Facebook starts with an isolated private test keyword before any production activation.'
+            : 'The boundary that prevents overlap with the live ManyChat flow.'}
+        >
           <dl className="space-y-3 text-sm">
             <SettingsRow label="Bot mode" value={isLoading ? 'Loading' : data?.runtime.mode || 'Off'} mono />
             <SettingsRow label="Custom-bot keyword" value={data?.runtime.systemKeyword || 'None'} mono />
-            <SettingsRow label="MINDSET keyword" value={data?.runtime.manychatKeywordProtected ? 'Protected for ManyChat' : 'Available'} />
+            <SettingsRow
+              label="MINDSET keyword"
+              value={facebookSelected
+                ? 'Not used during Facebook testing'
+                : data?.runtime.manychatKeywordProtected ? 'Protected for ManyChat' : 'Available'}
+            />
             <SettingsRow label="Legacy generic flows" value="Not used by this funnel" />
           </dl>
           <Link href="/campaigns" className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-800 transition hover:border-slate-400">Manage campaign triggers <ArrowRight size={16} weight="bold" /></Link>
@@ -92,12 +212,12 @@ export default function SettingsPage() {
 
         <SettingsCard icon={LinkSimple} title="Conversion tracking" description="How the dashboard knows whether a conversation led to app use and payment.">
           <div className="space-y-3">
-            <ChecklistRow label="Tracked Instagram download redirect" complete />
+            <ChecklistRow label="Tracked campaign download redirect" complete />
             <ChecklistRow label="App-open and first-rep milestones" complete />
             <ChecklistRow label="Paywall-view milestone" complete />
             <ChecklistRow label="RevenueCat trial and subscription verification endpoint" complete />
           </div>
-          <p className="mt-4 text-xs leading-5 text-slate-500">A link click is not treated as a download, and a user&apos;s DM claim is not treated as a verified payment. In this local review, the updated app and RevenueCat bridge are implementation-ready but not newly deployed.</p>
+          <p className="mt-4 text-xs leading-5 text-slate-500">A link click is not treated as a download, and a user&apos;s message is not treated as a verified payment. In this local review, the updated app and RevenueCat bridge are implementation-ready but not newly deployed.</p>
         </SettingsCard>
 
         <SettingsCard icon={Fingerprint} title="Dashboard access" description="This is separate from your Instagram login.">

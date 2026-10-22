@@ -109,7 +109,7 @@ export interface Lead {
   email?: string;
   phone?: string;
   name?: string;
-  source: 'comment_to_dm' | 'keyword_dm' | 'new_follower' | 'story_reply' | 'story_mention' | 'flow' | 'manual';
+  source: 'comment' | 'comment_to_dm' | 'keyword_dm' | 'new_follower' | 'story_reply' | 'story_mention' | 'flow' | 'manual';
   automationId?: string;
   flowId?: string;     // If lead came from a flow
   tags?: string[];
@@ -142,13 +142,24 @@ export interface InstagramAccount {
   id: string;
   userId: string;      // Owner of this account (Firebase Auth UID)
 
+  // Channel. Older documents predate this field and are treated as Instagram.
+  platform?: 'instagram' | 'facebook';
+
   // Account identifiers
   username: string;
   instagramAccountId: string;
   pageId: string;
   pageName?: string;
+  profilePictureUrl?: string;
   accessToken: string;  // Encrypted
   tokenExpiresAt?: admin.firestore.Timestamp;
+
+  // Facebook Pages use stored campaigns only. New Page connections start in
+  // test mode and never inherit the Instagram runtime fallback campaign.
+  automationMode?: 'test' | 'live' | 'paused';
+  isMindsetWorkspace?: boolean;
+  webhookSubscribed?: boolean;
+  webhookSubscribedAt?: admin.firestore.Timestamp;
 
   // AI Personality & Behavior
   aiPersonality: AIPersonality;
@@ -271,6 +282,7 @@ export interface OAuthState {
   userId: string;
   state: string;        // Random state token for CSRF protection
   redirectUrl?: string; // Where to redirect after OAuth
+  platform?: 'instagram' | 'facebook';
   createdAt: admin.firestore.Timestamp;
   expiresAt: admin.firestore.Timestamp;
 }

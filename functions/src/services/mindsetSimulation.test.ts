@@ -37,7 +37,7 @@ test('scope-checks an app-link resend before the deterministic two-message actio
     }
   );
   assert.equal(result.reply, 'here you go! hope you like it');
-  assert.deepEqual(result.additionalReplies, ['https://athletemindset.app/app']);
+  assert.deepEqual(result.additionalReplies, ['https://apps.apple.com/app/id6757452747']);
   assert.equal(result.nextStage, 'ai_follow_up');
   assert.deepEqual(result.buttons, []);
 });
@@ -51,7 +51,7 @@ test('resends the real app link when the person says it did not arrive', async (
     async () => { throw new Error('Claude should not be called for a failed link delivery'); }
   );
   assert.equal(result.reply, 'here you go! hope you like it');
-  assert.deepEqual(result.additionalReplies, ['https://athletemindset.app/app']);
+  assert.deepEqual(result.additionalReplies, ['https://apps.apple.com/app/id6757452747']);
   assert.equal(result.nextStage, 'link_sent');
   assert.equal(result.createsHandoff, false);
 });
@@ -70,6 +70,26 @@ test('simulates Vault resends with the exact Vault URL and no Athlete Mindset co
   assert.deepEqual(result.additionalReplies, ['https://stavhopp.no/get?src=instagram']);
   assert.equal(result.nextStage, 'link_sent');
   assert.doesNotMatch(JSON.stringify(result), /Athlete Mindset|mental rep/i);
+});
+
+test('TrackSpeed and TrackJump send only their own link and hand off other replies', async () => {
+  for (const [template, destination] of [
+    ['trackspeed_download', 'https://apps.apple.com/us/app/trackspeed-sprint-timer/id6757509163'],
+    ['trackjump_download', 'https://apps.apple.com/us/app/trackjump-jump-height-rsi/id6809517672'],
+  ] as const) {
+    const link = await simulateMindsetTurn(
+      'awaiting_link_request', 'send me the link', activationUrl, [], undefined,
+      undefined, { template }
+    );
+    assert.deepEqual(link.additionalReplies, [destination]);
+    assert.equal(link.nextStage, 'link_sent');
+    const other = await simulateMindsetTurn(
+      'link_sent', 'How much does it cost?', activationUrl, [], undefined,
+      undefined, { template }
+    );
+    assert.equal(other.reply, '');
+    assert.equal(other.createsHandoff, true);
+  }
 });
 
 test('answers Android questions deterministically for both products, including after completion', async () => {
@@ -139,7 +159,7 @@ test('turns Claude link controls into the same real two-message action', async (
     inScopeThen({ text: '[[SEND_APP_LINK]]', usedAI: true })
   );
   assert.equal(result.reply, 'here you go! hope you like it');
-  assert.deepEqual(result.additionalReplies, ['https://athletemindset.app/app']);
+  assert.deepEqual(result.additionalReplies, ['https://apps.apple.com/app/id6757452747']);
   assert.equal(result.nextStage, 'awaiting_download_status');
   assert.equal(result.createsHandoff, false);
 });
@@ -156,7 +176,7 @@ test('replaces Claude download-button placeholders with the real two-message act
     })
   );
   assert.equal(result.reply, 'here you go! hope you like it');
-  assert.deepEqual(result.additionalReplies, ['https://athletemindset.app/app']);
+  assert.deepEqual(result.additionalReplies, ['https://apps.apple.com/app/id6757452747']);
   assert.doesNotMatch(result.reply, /\[Download App\]/i);
 });
 
@@ -297,7 +317,7 @@ test('passes verified product knowledge into adaptive product-question turns', a
   assert.equal(capturedPrompts.length, questions.length);
   capturedPrompts.forEach((prompt) => {
     assert.match(prompt, /Home, Training, Progress, and Profile/);
-    assert.match(prompt, /Instagram assistant is not Aomi/i);
+    assert.match(prompt, /social messaging assistant is not Aomi/i);
     assert.match(prompt, /Do not ask whether they subscribed, paid, or started a trial/i);
   });
 });
@@ -352,7 +372,7 @@ test('uses the approved replies for stage-aware yes answers', async () => {
     async () => { throw new Error('Claude should not be called when the person replies link'); }
   );
   assert.equal(missingButtonFallback.reply, 'here you go! hope you like it');
-  assert.deepEqual(missingButtonFallback.additionalReplies, ['https://athletemindset.app/app']);
+  assert.deepEqual(missingButtonFallback.additionalReplies, ['https://apps.apple.com/app/id6757452747']);
   assert.equal(missingButtonFallback.nextStage, 'link_sent');
 
   const downloaded = await simulateMindsetTurn(
@@ -423,7 +443,7 @@ test('still resends the real app link after the conversation is complete', async
     }
   );
   assert.equal(result.reply, 'here you go! hope you like it');
-  assert.deepEqual(result.additionalReplies, ['https://athletemindset.app/app']);
+  assert.deepEqual(result.additionalReplies, ['https://apps.apple.com/app/id6757452747']);
   assert.equal(result.nextStage, 'completed');
 });
 

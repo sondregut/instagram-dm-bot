@@ -1,9 +1,12 @@
 import { db, InstagramAccount, AIPersonality, AccountSettings } from '../firebase';
 import { decrypt } from '../utils/encryption';
 import * as admin from 'firebase-admin';
+import { FOLLOWER_GATE_ACCOUNTS } from './followerGatePolicy';
+import { isTrackSpeedOnlyScope } from './trackSpeedOnlyPolicy';
 
 // Cache for account configs (to avoid repeated Firestore reads)
 const accountCache: Map<string, { account: InstagramAccount; timestamp: number }> = new Map();
+const facebookPageCache: Map<string, { account: InstagramAccount; timestamp: number }> = new Map();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 /**
@@ -13,7 +16,11 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 export async function getAccountByInstagramId(instagramAccountId: string): Promise<InstagramAccount | null> {
   // Check cache first
   const cached = accountCache.get(instagramAccountId);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+  // Read the scoped account switch for every webhook so activation cannot use
+  // a pre-gate account cached for five minutes. Other account caching is unchanged.
+  if (!FOLLOWER_GATE_ACCOUNTS.some(account => account.instagramAccountId === instagramAccountId)
+    && !isTrackSpeedOnlyScope(cached?.account)
+    && cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.account;
   }
 
@@ -78,6 +85,30 @@ Be warm and authentic, not robotic.`,
   // Update cache
   accountCache.set(instagramAccountId, { account, timestamp: Date.now() });
 
+  return account;
+}
+
+/** Resolve a Facebook Page webhook entry without ever falling back to legacy Instagram config. */
+export async function getAccountByFacebookPageId(pageId: string): Promise<InstagramAccount | null> {
+  const cached = facebookPageCache.get(pageId);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) return cached.account;
+
+  const snapshot = await db.collection('accounts')
+    .where('pageId', '==', pageId)
+    .where('isActive', '==', true)
+    .limit(3)
+    .get();
+  const matches = snapshot.docs.filter((doc) => doc.data()?.platform === 'facebook');
+  if (matches.length !== 1) {
+    if (matches.length > 1) {
+      console.error('[Accounts] Duplicate active Facebook Page mapping rejected');
+    }
+    return null;
+  }
+
+  const doc = matches[0];
+  const account = { ...doc.data(), id: doc.id } as InstagramAccount;
+  facebookPageCache.set(pageId, { account, timestamp: Date.now() });
   return account;
 }
 
@@ -346,8 +377,10 @@ export function isWithinBusinessHours(account: InstagramAccount): boolean {
 export function clearAccountCache(instagramAccountId?: string): void {
   if (instagramAccountId) {
     accountCache.delete(instagramAccountId);
+    facebookPageCache.delete(instagramAccountId);
   } else {
     accountCache.clear();
+    facebookPageCache.clear();
   }
 }
 

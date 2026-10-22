@@ -7,6 +7,7 @@ import {
   isCampaignStatusActive,
   normalizeMindsetCampaignKeyword,
   normalizeMindsetCampaignPostMode,
+  parseMindsetTargetAccountUsernames,
   selectNextCampaignPostId,
   shouldUseRuntimeCampaign,
   validateMindsetCampaignInput,
@@ -14,6 +15,20 @@ import {
 
 test('normalizes campaign keywords without changing their meaning', () => {
   assert.equal(normalizeMindsetCampaignKeyword('  amdmtest8472 '), 'AMDMTEST8472');
+});
+
+test('allows multiple isolated Instagram accounts in the protected workspace', () => {
+  assert.deepEqual(
+    [...parseMindsetTargetAccountUsernames('sondre_pv, @AthleteMindsetApp', 'legacy_account')],
+    ['sondre_pv', 'athletemindsetapp']
+  );
+});
+
+test('falls back to the legacy single-account setting during migration', () => {
+  assert.deepEqual(
+    [...parseMindsetTargetAccountUsernames(undefined, '@Sondre_PV')],
+    ['sondre_pv']
+  );
 });
 
 test('blocks the live ManyChat keyword from test campaigns', () => {

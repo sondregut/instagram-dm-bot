@@ -34,6 +34,7 @@ export function isDashboardReviewMode(): boolean {
 
 export const reviewAccount: InstagramAccount = {
   id: 'review-sondre-pv',
+  platform: 'instagram',
   username: 'sondre_pv',
   instagramAccountId: 'review-instagram-account',
   pageName: 'Sondre Gutormsen',
@@ -312,7 +313,9 @@ function readStoredReviewCampaigns(): MindsetCampaign[] {
         publicReplyEnabled: campaign.publicReplyEnabled !== false,
         publicReplyText: campaign.publicReplyText || DEFAULT_MINDSET_PUBLIC_REPLY_TEXT,
         template: campaign.template === 'vault_tracker_download'
-          ? 'vault_tracker_download'
+          || campaign.template === 'trackspeed_download'
+          || campaign.template === 'trackjump_download'
+          ? campaign.template
           : 'athlete_mindset_download',
         journey: normalizeMindsetCampaignJourney(campaign.journey, campaign.template),
       }));

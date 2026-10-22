@@ -75,7 +75,20 @@ interface CampaignFormState {
   currentStatus: MindsetCampaignStatus;
 }
 
-function createEmptyForm(): CampaignFormState {
+function facebookOpeningMessage(template: MindsetCampaignTemplate): string {
+  const productName = campaignProductName(template);
+  return `reply link and I’ll send you the link to download ${productName}\n\nAppreciate you,\nSondre`;
+}
+
+function defaultPublicReplies(platform: 'instagram' | 'facebook'): string {
+  return platform === 'facebook'
+    ? DEFAULT_MINDSET_PUBLIC_REPLY_TEXT.replace(/\bDMs?\b/gi, 'Messenger')
+    : DEFAULT_MINDSET_PUBLIC_REPLY_TEXT;
+}
+
+function createEmptyForm(platform: 'instagram' | 'facebook' = 'instagram'): CampaignFormState {
+  const template: MindsetCampaignTemplate = 'athlete_mindset_download';
+  const journey = normalizeMindsetCampaignJourney(undefined, template);
   return {
     name: '',
     keyword: '',
@@ -85,9 +98,11 @@ function createEmptyForm(): CampaignFormState {
     nextPostActivatedAt: null,
     nextPostResolvedAt: null,
     publicReplyEnabled: true,
-    publicReplyText: DEFAULT_MINDSET_PUBLIC_REPLY_TEXT,
-    template: 'athlete_mindset_download',
-    journey: normalizeMindsetCampaignJourney(undefined, 'athlete_mindset_download'),
+    publicReplyText: defaultPublicReplies(platform),
+    template,
+    journey: platform === 'facebook'
+      ? { ...journey, openingMessage: facebookOpeningMessage(template) }
+      : journey,
     currentStatus: 'draft',
   };
 }
@@ -116,7 +131,7 @@ export default function CampaignsPage() {
   });
   const saveMutation = useMutation({
     mutationFn: (status: MindsetCampaignStatus) => {
-      if (!selectedAccount) throw new Error('Instagram account is not connected.');
+      if (!selectedAccount) throw new Error('Messaging account is not connected.');
       return saveMindsetCampaign({
         id: form.id,
         accountId: selectedAccount.id,
@@ -135,7 +150,7 @@ export default function CampaignsPage() {
       setSaveError('');
       setEditorOpen(false);
       setSelectedCampaignId(campaign.id);
-      setForm(createEmptyForm());
+      setForm(createEmptyForm(selectedAccount?.platform || 'instagram'));
       setConfirmedSafeActivation(false);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['mindset-campaigns', selectedAccount?.id] }),
@@ -150,6 +165,8 @@ export default function CampaignsPage() {
   const campaigns = data?.campaigns || [];
   const keyword = form.keyword.trim().toUpperCase();
   const runtimeMode = data?.runtime.mode || 'off';
+  const platform = selectedAccount?.platform || 'instagram';
+  const channelName = platform === 'facebook' ? 'Facebook' : 'Instagram';
   const nameValid = form.name.trim().length >= 2;
   const keywordValid = /^[A-Z0-9_-]{2,40}$/.test(keyword);
   const postSelectionValid = form.postMode !== 'specific' || form.postIds.length > 0;
@@ -214,7 +231,7 @@ export default function CampaignsPage() {
   if (accounts.length === 0 || !selectedAccount) return <NoAccountState />;
 
   const openNewCampaign = () => {
-    setForm(createEmptyForm());
+    setForm(createEmptyForm(platform));
     setSaveError('');
     setConfirmedSafeActivation(false);
     setEditorOpen(true);
@@ -277,7 +294,7 @@ export default function CampaignsPage() {
       <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-semibold text-emerald-700">Instagram growth</p>
+            <p className="text-sm font-semibold text-emerald-700">{channelName} growth</p>
             {reviewMode && <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-800">Local preview</span>}
           </div>
           <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em] text-slate-950">Comment automations</h1>
@@ -317,7 +334,8 @@ export default function CampaignsPage() {
         <div ref={workspaceAnchor} className={cn('min-w-0 scroll-mt-4', editorOpen && 'order-first lg:order-none')}>
           {editorOpen ? (
             <CampaignEditor
-              accountUsername={selectedAccount.username}
+              accountUsername={selectedAccount.pageName || selectedAccount.username}
+              platform={platform}
               form={form}
               setForm={setForm}
               posts={posts}
@@ -349,7 +367,8 @@ export default function CampaignsPage() {
             />
           ) : selectedCampaign ? (
             <CampaignDetails
-              accountUsername={selectedAccount.username}
+              accountUsername={selectedAccount.pageName || selectedAccount.username}
+              platform={platform}
               campaign={selectedCampaign}
               posts={posts}
               onEdit={() => openCampaign(selectedCampaign)}
@@ -500,12 +519,14 @@ function CampaignListItem({ campaign, posts, selected, onSelect }: { campaign: M
 
 function CampaignDetails({
   accountUsername,
+  platform,
   campaign,
   posts,
   onEdit,
   onPause,
 }: {
   accountUsername: string;
+  platform: 'instagram' | 'facebook';
   campaign: MindsetCampaign;
   posts: InstagramPost[];
   onEdit: () => void;
@@ -570,7 +591,14 @@ function CampaignDetails({
           <div className="mt-4">
             <JourneyRow number="1" icon={Megaphone} title={`Comment contains ${campaign.keyword}`} detail={campaignPostScopeDetail(campaign)} />
             <JourneyRow number="2" icon={ChatsCircle} title={campaign.publicReplyEnabled ? 'Reply publicly after the DM succeeds' : 'Skip the public comment reply'} detail={campaign.publicReplyEnabled ? `${publicReplies.length} reply variation${publicReplies.length === 1 ? '' : 's'} rotate automatically` : 'The private DM still sends'} />
-            <JourneyRow number="3" icon={PaperPlaneTilt} title="Send the opening DM" detail={`Button: ${journey.openingButtonText}`} />
+            <JourneyRow
+              number="3"
+              icon={PaperPlaneTilt}
+              title="Send the opening message"
+              detail={platform === 'facebook'
+                ? 'The person replies link in Messenger'
+                : `Button: ${journey.openingButtonText}`}
+            />
             <JourneyRow number="4" icon={LinkSimple} title="Send the app link in two messages" detail={`A short note, then the direct ${mindsetDestinationHost(journey.destinationUrl)} link`} />
             <JourneyRow number="5" icon={ClockCountdown} title={`${activeFollowUps.length} follow-up${activeFollowUps.length === 1 ? '' : 's'} enabled`} detail="Replies, clicks, milestones, and conversions stop messages that are no longer relevant" last />
           </div>
@@ -588,6 +616,7 @@ function CampaignDetails({
         <div className="border-t border-slate-200 bg-slate-50/70 p-5 2xl:border-l 2xl:border-t-0">
           <InstagramPreview
             accountUsername={accountUsername}
+            platform={platform}
             keyword={campaign.keyword}
             replies={publicReplies}
             publicReplyEnabled={campaign.publicReplyEnabled}
@@ -604,6 +633,7 @@ function CampaignDetails({
 
 function CampaignEditor({
   accountUsername,
+  platform,
   form,
   setForm,
   posts,
@@ -628,6 +658,7 @@ function CampaignEditor({
   onClose,
 }: {
   accountUsername: string;
+  platform: 'instagram' | 'facebook';
   form: CampaignFormState;
   setForm: React.Dispatch<React.SetStateAction<CampaignFormState>>;
   posts: InstagramPost[];
@@ -667,10 +698,15 @@ function CampaignEditor({
       return {
         ...current,
         template,
-        journey: normalizeMindsetCampaignJourney(
+        journey: (() => {
+          const nextJourney = normalizeMindsetCampaignJourney(
           defaultMindsetCampaignJourney(template),
           template
-        ),
+          );
+          return platform === 'facebook'
+            ? { ...nextJourney, openingMessage: facebookOpeningMessage(template) }
+            : nextJourney;
+        })(),
       };
     });
     setConfirmedSafeActivation(false);
@@ -688,7 +724,7 @@ function CampaignEditor({
 
       {reviewMode && (
         <div className="border-b border-emerald-200 bg-emerald-50 px-5 py-2.5 text-xs leading-5 text-emerald-900 sm:px-6">
-          Local preview only. Changes here cannot send an Instagram DM.
+          Local preview only. Changes here cannot send a social message.
         </div>
       )}
 
@@ -709,6 +745,18 @@ function CampaignEditor({
                   name="Vault"
                   detail="Pole vault training tracker"
                   onClick={() => selectTemplate('vault_tracker_download')}
+                />
+                <ProductButton
+                  selected={form.template === 'trackspeed_download'}
+                  name="TrackSpeed"
+                  detail="Sprint timer App Store link"
+                  onClick={() => selectTemplate('trackspeed_download')}
+                />
+                <ProductButton
+                  selected={form.template === 'trackjump_download'}
+                  name="TrackJump"
+                  detail="Jump tracker App Store link"
+                  onClick={() => selectTemplate('trackjump_download')}
                 />
               </div>
               <p className="mt-2 text-[11px] leading-5 text-slate-500">Changing the app loads its protected default link, messages, follow-ups, and Claude product context.</p>
@@ -778,7 +826,7 @@ function CampaignEditor({
             </fieldset>
           </BuilderSection>
 
-          <BuilderSection number="2" title="Set the public reply" description="This reply appears under the comment only after the private DM succeeds.">
+          <BuilderSection number="2" title="Set the public reply" description="This reply appears under the comment only after the private message succeeds.">
             <div className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
               <div>
                 <p className="text-sm font-semibold text-slate-900">Reply on the post</p>
@@ -799,6 +847,7 @@ function CampaignEditor({
             <DmJourneyEditor
               journey={form.journey}
               template={form.template}
+              platform={platform}
               onChange={(journey) => setForm((current) => ({ ...current, journey }))}
               errors={journeyErrors}
             />
@@ -817,7 +866,7 @@ function CampaignEditor({
             {testBlockedByKeyword && (
               <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs leading-5 text-amber-900">
                 <ShieldWarning size={18} weight="fill" className="mt-0.5 flex-shrink-0" />
-                <p><strong>MINDSET can only be saved as a draft.</strong> ManyChat still owns this keyword. Turn it off there before deliberately enabling production mode here.</p>
+                <p><strong>MINDSET can only be saved as a draft while this channel is in test mode.</strong> Use a private keyword such as FBADMINTEST123 for the first end-to-end test.</p>
               </div>
             )}
 
@@ -836,8 +885,10 @@ function CampaignEditor({
                 />
                 <span className="text-xs leading-5 text-slate-600">
                   {productionMode
-                    ? 'I confirmed the old automation is off and this keyword should run on the selected post scope.'
-                    : 'I confirmed this is a private test keyword and does not overlap with the live ManyChat automation.'}
+                    ? 'I confirmed any previous automation is off and this keyword should run on the selected post scope.'
+                    : platform === 'facebook'
+                      ? 'I confirmed this is a private Facebook test keyword and is safe to run on the selected post scope.'
+                      : 'I confirmed this is a private test keyword and does not overlap with the live ManyChat automation.'}
                 </span>
               </label>
             )}
@@ -850,6 +901,7 @@ function CampaignEditor({
           <div className="2xl:sticky 2xl:top-6">
             <InstagramPreview
               accountUsername={accountUsername}
+              platform={platform}
               keyword={keyword || 'KEYWORD'}
               replies={publicReplyVariants}
               publicReplyEnabled={form.publicReplyEnabled}
@@ -925,6 +977,7 @@ const FOLLOW_UP_META: Record<MindsetCampaignFollowUpKey, { label: string; trigge
 function followUpKeysForTemplate(
   template: MindsetCampaignTemplate
 ): MindsetCampaignFollowUpKey[] {
+  if (template === 'trackspeed_download' || template === 'trackjump_download') return [];
   return template === 'vault_tracker_download'
     ? MINDSET_FOLLOW_UP_KEYS
     : MINDSET_FOLLOW_UP_KEYS.filter((key) => key !== 'resourceOffer');
@@ -933,11 +986,13 @@ function followUpKeysForTemplate(
 function DmJourneyEditor({
   journey,
   template,
+  platform,
   onChange,
   errors,
 }: {
   journey: MindsetCampaignJourney;
   template: MindsetCampaignTemplate;
+  platform: 'instagram' | 'facebook';
   onChange: (journey: MindsetCampaignJourney) => void;
   errors: string[];
 }) {
@@ -1020,23 +1075,29 @@ function DmJourneyEditor({
                 />
                 <CharacterCount current={journey.openingMessage.length} maximum={500} />
               </label>
-              <label className="mt-4 block">
-                <span className="text-sm font-semibold text-slate-800">Quick-reply button</span>
-                <input
-                  value={journey.openingButtonText}
-                  maxLength={20}
-                  onChange={(event) => updateJourney('openingButtonText', event.target.value)}
-                  className={fieldClassName}
-                />
-                <CharacterCount current={journey.openingButtonText.length} maximum={20} />
-              </label>
-              <InlineInfo icon={ChatsCircle} title="Instagram requires this tap" detail="The first quick reply opens the normal messaging window. The short note and direct app link are sent immediately after the athlete taps it." />
+              {platform === 'instagram' ? (
+                <>
+                  <label className="mt-4 block">
+                    <span className="text-sm font-semibold text-slate-800">Quick-reply button</span>
+                    <input
+                      value={journey.openingButtonText}
+                      maxLength={20}
+                      onChange={(event) => updateJourney('openingButtonText', event.target.value)}
+                      className={fieldClassName}
+                    />
+                    <CharacterCount current={journey.openingButtonText.length} maximum={20} />
+                  </label>
+                  <InlineInfo icon={ChatsCircle} title="Instagram requires this tap" detail="The first quick reply opens the normal messaging window. The short note and direct app link are sent immediately after the athlete taps it." />
+                </>
+              ) : (
+                <InlineInfo icon={ChatsCircle} title="Facebook starts with a text reply" detail="Facebook comment private replies are text-only. Ask the person to reply link, then Messenger sends the note and real app URL as two messages." />
+              )}
             </div>
           )}
 
           {activeStep === 'link' && (
             <div>
-              <JourneyPanelHeading title="Configure the app link" detail="The note and URL are sent as separate messages so Instagram can render the App Store link preview." />
+              <JourneyPanelHeading title="Configure the app link" detail={`The note and URL are sent as separate messages so ${platform === 'facebook' ? 'Messenger' : 'Instagram'} can render the app link preview.`} />
               <div className="mt-5">
                 <label className="block">
                   <span className="text-sm font-semibold text-slate-800">Link message</span>
@@ -1057,7 +1118,7 @@ function DmJourneyEditor({
                     type="url"
                     value={journey.destinationUrl}
                     onChange={(event) => updateJourney('destinationUrl', event.target.value)}
-                    placeholder="https://athletemindset.app/app"
+                    placeholder="https://apps.apple.com/app/id6757452747"
                     className={cn(fieldClassName, 'pl-10 pr-10')}
                   />
                   {isSafeHttpsUrl(journey.destinationUrl) && (
@@ -1066,9 +1127,9 @@ function DmJourneyEditor({
                     </a>
                   )}
                 </div>
-                <FieldHint invalid={!isSafeHttpsUrl(journey.destinationUrl)}>Use the clean HTTPS app link you want Instagram to preview.</FieldHint>
+                <FieldHint invalid={!isSafeHttpsUrl(journey.destinationUrl)}>Use the clean HTTPS app link you want {platform === 'facebook' ? 'Messenger' : 'Instagram'} to preview.</FieldHint>
               </label>
-              <InlineInfo icon={CursorClick} title="Clean link preview" detail="The app URL is sent as its own message so Instagram can show the image preview. The later check-in is plain text and does not add another button." />
+              <InlineInfo icon={CursorClick} title="Clean link preview" detail={`The app URL is sent as its own message so ${platform === 'facebook' ? 'Messenger' : 'Instagram'} can show the image preview. The later check-in is plain text and does not add another button.`} />
             </div>
           )}
 
@@ -1133,7 +1194,7 @@ function DmJourneyEditor({
                       <CharacterCount current={journey.followUps[activeFollowUp].message.length} maximum={500} />
                     </label>
                     {activeFollowUp === 'noClick' && <p className="mt-3 text-[11px] leading-5 text-slate-500">This check-in is sent as a normal text message with no button.</p>}
-                    {activeFollowUp === 'resourceOffer' && <p className="mt-3 text-[11px] leading-5 text-slate-500">Vault only. It sends once after a positive reply, stays inside the Instagram messaging window, and is cancelled if the athlete messages again first.</p>}
+                    {activeFollowUp === 'resourceOffer' && <p className="mt-3 text-[11px] leading-5 text-slate-500">Vault only. It sends once after a positive reply, stays inside the standard messaging window, and is cancelled if the athlete messages again first.</p>}
                   </div>
                 </div>
               </div>
@@ -1147,7 +1208,7 @@ function DmJourneyEditor({
                 <GuardrailRow title="Maximum two unanswered follow-ups" detail="The automation stops instead of continuing to message someone who stays silent." />
                 <GuardrailRow title="Replies cancel pending reminders" detail="A new message from the athlete resets the flow and is handled only inside that conversation." />
                 <GuardrailRow title="Clicks and milestones suppress stale questions" detail="The bot does not ask whether a link was clicked after tracking has already proved it." />
-                <GuardrailRow title="Instagram messaging window enforced" detail="Anything outside the conservative 23-hour window is skipped." />
+                <GuardrailRow title="Messaging window enforced" detail="Anything outside the conservative 23-hour window is skipped." />
                 <GuardrailRow title="Verified conversion stops the funnel" detail="Trial and subscription events cancel every remaining campaign follow-up." />
               </div>
             </div>
@@ -1235,6 +1296,7 @@ function ReplyVariationsEditor({ value, onChange, valid }: { value: string; onCh
 
 function InstagramPreview({
   accountUsername,
+  platform,
   keyword,
   replies,
   publicReplyEnabled,
@@ -1244,6 +1306,7 @@ function InstagramPreview({
   template,
 }: {
   accountUsername: string;
+  platform: 'instagram' | 'facebook';
   keyword: string;
   replies: string[];
   publicReplyEnabled: boolean;
@@ -1256,7 +1319,26 @@ function InstagramPreview({
   const [dmStep, setDmStep] = useState<'opening' | 'link' | 'followup'>('opening');
   const [previewFollowUp, setPreviewFollowUp] = useState<MindsetCampaignFollowUpKey>('noClick');
   const [replyIndex, setReplyIndex] = useState(0);
-  const currentReply = replies[replyIndex % Math.max(replies.length, 1)] || 'Your public reply appears here.';
+  const configuredReply = replies[replyIndex % Math.max(replies.length, 1)] || 'Your public reply appears here.';
+  const currentReply = platform === 'facebook'
+    ? configuredReply.replace(/\bDMs?\b/gi, 'Messenger')
+    : configuredReply;
+  const channelName = platform === 'facebook' ? 'Facebook' : 'Instagram';
+  const actualOpeningMessage = platform === 'facebook'
+    ? (/click below|button/i.test(journey.openingMessage)
+      ? facebookOpeningMessage(template)
+      : journey.openingMessage)
+    : journey.openingMessage;
+  const actualDestinationUrl = (() => {
+    if (platform !== 'facebook') return journey.destinationUrl;
+    try {
+      const url = new URL(journey.destinationUrl);
+      if (url.searchParams.get('src') === 'instagram') url.searchParams.set('src', 'facebook');
+      return url.toString();
+    } catch {
+      return journey.destinationUrl;
+    }
+  })();
   const imageUrl = post?.thumbnailUrl || post?.mediaUrl;
   const enabledFollowUps = followUpKeysForTemplate(template)
     .filter((key) => journey.followUps[key].enabled);
@@ -1272,7 +1354,7 @@ function InstagramPreview({
     <div>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-sm font-semibold text-slate-950">Instagram preview</p>
+          <p className="text-sm font-semibold text-slate-950">{channelName} preview</p>
           <p className="mt-0.5 text-[11px] text-slate-500">Preview the comment and opening DM.</p>
         </div>
         <div className="flex self-start rounded-lg bg-slate-200/70 p-0.5 sm:self-auto">
@@ -1294,7 +1376,7 @@ function InstagramPreview({
               <div className="grid aspect-[4/3] place-items-center bg-slate-100 text-center">
                 <div>
                   {postMode === 'next' ? <CalendarPlus size={24} className="mx-auto text-slate-300" /> : <Images size={24} className="mx-auto text-slate-300" />}
-                  <p className="mt-2 text-[10px] font-medium text-slate-500">{postMode === 'next' ? 'Your next Instagram post' : postMode === 'specific' ? 'Selected Instagram post' : 'Any current or future post'}</p>
+                  <p className="mt-2 text-[10px] font-medium text-slate-500">{postMode === 'next' ? `Your next ${channelName} post` : postMode === 'specific' ? `Selected ${channelName} post` : 'Any current or future post'}</p>
                 </div>
               </div>
             )}
@@ -1311,7 +1393,7 @@ function InstagramPreview({
           <div className="min-h-[380px] bg-[#f7f7f8]">
             <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-3 py-2.5">
               <AccountAvatar username={accountUsername} />
-              <div><p className="text-[11px] font-semibold text-slate-950">{accountUsername}</p><p className="text-[9px] text-slate-400">Instagram</p></div>
+              <div><p className="text-[11px] font-semibold text-slate-950">{accountUsername}</p><p className="text-[9px] text-slate-400">{platform === 'facebook' ? 'Messenger' : 'Instagram'}</p></div>
             </div>
             <div className="border-b border-slate-200 bg-white px-2 py-2">
               <div className="grid grid-cols-3 gap-1 rounded-lg bg-slate-100 p-0.5">
@@ -1323,15 +1405,15 @@ function InstagramPreview({
             <div className="space-y-3 px-3 py-5">
               {dmStep === 'opening' && (
                 <>
-                  <PreviewMessage text={journey.openingMessage} button={journey.openingButtonText} />
-                  <p className="px-2 text-[9px] leading-4 text-slate-400">This quick reply opens the normal Instagram messaging window.</p>
+                  <PreviewMessage text={actualOpeningMessage} button={platform === 'instagram' ? journey.openingButtonText : undefined} />
+                  <p className="px-2 text-[9px] leading-4 text-slate-400">{platform === 'facebook' ? 'The person replies link to continue in Messenger.' : 'This quick reply opens the normal Instagram messaging window.'}</p>
                 </>
               )}
               {dmStep === 'link' && (
                 <>
                   <PreviewMessage text={journey.linkMessage} />
-                  <PreviewMessage text={journey.destinationUrl} icon={LinkSimple} />
-                  <p className="px-2 text-[9px] leading-4 text-slate-400">Instagram can render the App Store image preview from this direct link.</p>
+                  <PreviewMessage text={actualDestinationUrl} icon={LinkSimple} />
+                  <p className="px-2 text-[9px] leading-4 text-slate-400">{platform === 'facebook' ? 'Messenger' : 'Instagram'} can render the app link preview from this direct link.</p>
                 </>
               )}
               {dmStep === 'followup' && visibleFollowUp && (
@@ -1406,7 +1488,12 @@ function mindsetDestinationHost(value: string): string {
 }
 
 function campaignProductName(template: MindsetCampaignTemplate): string {
-  return template === 'vault_tracker_download' ? 'Vault' : 'Athlete Mindset';
+  switch (template) {
+    case 'vault_tracker_download': return 'Vault';
+    case 'trackspeed_download': return 'TrackSpeed';
+    case 'trackjump_download': return 'TrackJump';
+    default: return 'Athlete Mindset';
+  }
 }
 
 function campaignPostScopeLabel(campaign: MindsetCampaign): string {
@@ -1424,9 +1511,9 @@ function campaignPostScopeDetail(campaign: MindsetCampaign): string {
       : 'The first new post or reel published after activation becomes the only target';
   }
   if (postMode === 'specific') {
-    return `${campaign.postIds.length} selected Instagram post${campaign.postIds.length === 1 ? '' : 's'}`;
+    return `${campaign.postIds.length} selected post${campaign.postIds.length === 1 ? '' : 's'}`;
   }
-  return 'Any current or future Instagram post';
+  return 'Any current or future post';
 }
 
 function SummaryItem({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
@@ -1490,7 +1577,7 @@ function ModeButton({ selected, icon: Icon, label, detail, onClick }: { selected
 function PostGrid({ posts, selectedPostIds, loading, onToggle }: { posts: InstagramPost[]; selectedPostIds: string[]; loading: boolean; onToggle: (postId: string) => void }) {
   const [showAllPosts, setShowAllPosts] = useState(false);
   if (loading) return <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">{[0, 1, 2, 3, 4, 5].map((item) => <div key={item} className="aspect-square animate-pulse rounded-xl bg-slate-100" />)}</div>;
-  if (!posts.length) return <div className="mt-3 rounded-xl border border-dashed border-slate-300 px-4 py-6 text-center text-xs text-slate-500">No recent Instagram posts were returned.</div>;
+  if (!posts.length) return <div className="mt-3 rounded-xl border border-dashed border-slate-300 px-4 py-6 text-center text-xs text-slate-500">No recent posts were returned for this channel.</div>;
 
   const visiblePosts = showAllPosts ? posts : posts.slice(0, 6);
   return (
@@ -1504,7 +1591,7 @@ function PostGrid({ posts, selectedPostIds, loading, onToggle }: { posts: Instag
           const selected = selectedPostIds.includes(post.id);
           const imageUrl = post.thumbnailUrl || post.mediaUrl;
           return (
-            <button key={post.id} type="button" onClick={() => onToggle(post.id)} aria-pressed={selected} aria-label={`${selected ? 'Remove' : 'Add'} ${post.caption || `Instagram post ${index + 1}`}`} className={cn('group relative aspect-square overflow-hidden rounded-xl border p-3 text-left transition active:scale-[0.98]', selected ? 'border-emerald-500 ring-2 ring-emerald-100' : 'border-slate-200 hover:border-slate-400')} style={imageUrl ? { backgroundImage: `url(${imageUrl})`, backgroundPosition: 'center', backgroundSize: 'cover' } : undefined}>
+            <button key={post.id} type="button" onClick={() => onToggle(post.id)} aria-pressed={selected} aria-label={`${selected ? 'Remove' : 'Add'} ${post.caption || `post ${index + 1}`}`} className={cn('group relative aspect-square overflow-hidden rounded-xl border p-3 text-left transition active:scale-[0.98]', selected ? 'border-emerald-500 ring-2 ring-emerald-100' : 'border-slate-200 hover:border-slate-400')} style={imageUrl ? { backgroundImage: `url(${imageUrl})`, backgroundPosition: 'center', backgroundSize: 'cover' } : undefined}>
               <span className={cn('absolute inset-0', imageUrl ? 'bg-gradient-to-t from-slate-950/90 via-slate-950/25 to-transparent' : 'bg-slate-100')} />
               <span className={cn('absolute bottom-2 left-2 z-10 rounded-md px-1.5 py-1 text-[9px] font-bold uppercase tracking-wide', imageUrl ? 'bg-slate-950/65 text-white' : 'bg-white text-slate-500')}>{post.mediaType.replace('_', ' ')}</span>
               <span className={cn('absolute right-2 top-2 z-10 grid h-6 w-6 place-items-center rounded-full border transition', selected ? 'border-emerald-700 bg-emerald-700 text-white' : 'border-white/70 bg-white text-transparent')}><Check size={14} weight="bold" /></span>

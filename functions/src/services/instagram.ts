@@ -3,6 +3,7 @@ import { checkRateLimit, recordSentMessage } from '../utils/rateLimiter';
 import { truncateMessage } from '../utils/validators';
 import { decrypt } from '../utils/encryption';
 import { getAccountById, getAccountAccessToken } from './accounts';
+import { isFollowerGateEnabled, protectFollowerOutbound, followerInboundExpiry, canDeliverFollowerProtectedContent } from './followerGatePolicy';
 import {
   InstagramUserProfile,
   normalizeInstagramUserProfile,
@@ -11,6 +12,17 @@ import {
   buildMindsetConversationId,
   isMindsetConversationIdentityMatch,
 } from './mindsetConversationIsolation';
+import {
+  getFacebookPagePosts,
+  getFacebookUserProfile,
+  isFacebookAccount,
+  replyToFacebookComment,
+  sendFacebookButtonDM,
+  sendFacebookDM,
+  sendFacebookPrivateReply,
+  sendFacebookQuickReplyDM,
+  verifyFacebookPageConnection,
+} from './facebook';
 
 const GRAPH_API_VERSION = 'v21.0';
 // Instagram Business Login tokens use graph.instagram.com
@@ -22,6 +34,7 @@ interface InstagramAPIResponse {
   success: boolean;
   data?: any;
   error?: string;
+  errorCode?: number;
 }
 
 /**
@@ -95,10 +108,19 @@ async function graphRequest(
 
     console.log(`[GraphAPI] Response status: ${response.status}`);
     if (!response.ok) {
-      console.error('[GraphAPI] Request failed:', data.error?.code || response.status);
+      const errorCode = typeof data.error?.code === 'number' ? data.error.code : undefined;
+      const endpointKind = /\/messages(?:\?|$)/.test(endpoint) ? 'messages'
+        : /fields=id,username,name,profile_(?:pic|picture_url)/.test(endpoint) ? 'user_profile'
+          : /\/replies(?:\?|$)/.test(endpoint) ? 'comment_reply' : 'other';
+      console.error(JSON.stringify({ severity: 'ERROR', event: 'dm_graph_request_failed', method,
+        endpointKind, host: useInstagramApi ? 'instagram' : 'facebook', httpStatus: response.status,
+        errorCode: errorCode ?? null,
+        errorSubcode: typeof data.error?.error_subcode === 'number' ? data.error.error_subcode : null,
+        transient: data.error?.is_transient === true }));
       return {
         success: false,
         error: data.error?.message || 'Unknown API error',
+        errorCode,
       };
     }
 
@@ -124,6 +146,12 @@ export async function sendInstagramDM(
   account?: InstagramAccount,
   context?: { conversationId?: string }
 ): Promise<boolean> {
+  if (account && isFollowerGateEnabled(account)) {
+    return sendInstagramDMOnce(recipientId, message, account, followerInboundExpiry(account.id, recipientId));
+  }
+  if (account && isFacebookAccount(account)) {
+    return sendFacebookDM(recipientId, message, account);
+  }
   console.log(`[Instagram] Attempting to send DM to ${recipientId}`);
 
   // Check rate limit (global or per-account in future)
@@ -234,6 +262,28 @@ export async function sendInstagramDM(
   }
 }
 
+/** Send an inbound-keyword reply once, without retries or delayed queue delivery. */
+export async function sendInstagramDMOnce(
+  recipientId: string,
+  message: string,
+  account: InstagramAccount,
+  expiresAtMs: number
+): Promise<boolean> {
+  if (isFacebookAccount(account) || !Number.isFinite(expiresAtMs) || Date.now() >= expiresAtMs) return false;
+  if (!await protectFollowerOutbound(account, recipientId, message)) return false;
+  const rateLimit = await checkRateLimit(account.id);
+  if (!rateLimit.allowed) return false;
+  const accessToken = await getAccessToken(account);
+  if (Date.now() >= expiresAtMs || !canDeliverFollowerProtectedContent(account, recipientId, message)) return false;
+  const result = await graphRequest('/me/messages', accessToken, 'POST', {
+    recipient: { id: recipientId },
+    message: { text: truncateMessage(message) },
+  }, accessToken.startsWith('IG'));
+  if (result.success) await recordSentMessage(recipientId, 'dm', account.id);
+  // Ambiguous failures are not retried: Meta has no client idempotency key here.
+  return result.success;
+}
+
 /**
  * Send a DM with quick reply buttons
  */
@@ -243,6 +293,12 @@ export async function sendQuickReplyDM(
   quickReplies: { title: string; payload: string }[],
   account?: InstagramAccount
 ): Promise<boolean> {
+  if (account && isFollowerGateEnabled(account)) {
+    return sendInstagramGatePromptOnce(recipientId, message, quickReplies, account, followerInboundExpiry(account.id, recipientId));
+  }
+  if (account && isFacebookAccount(account)) {
+    return sendFacebookQuickReplyDM(recipientId, message, quickReplies, account);
+  }
   const rateLimit = await checkRateLimit(account?.id);
   if (!rateLimit.allowed) {
     await queueMessage(recipientId, message, account?.id, account?.userId);
@@ -289,11 +345,29 @@ export async function sendQuickReplyDM(
 
 type InstagramRecipient = { id: string } | { comment_id: string };
 
+/** Reserved comment event: one attempt, no host fallback, delayed queue or retry. */
+export async function sendInstagramCommentPrivateReplyOnce(commentId: string, message: string,
+  account: InstagramAccount, expiresAtMs: number): Promise<boolean> {
+  if (isFacebookAccount(account) || !Number.isFinite(expiresAtMs) || Date.now() >= expiresAtMs
+    || !await protectFollowerOutbound(account, undefined, message)) return false;
+  const rate = await checkRateLimit(account.id); if (!rate.allowed) return false;
+  const token = await getAccessToken(account);
+  if (Date.now() >= expiresAtMs) return false;
+  const result = await graphRequest('/me/messages', token, 'POST',
+    { recipient: { comment_id: commentId }, message: { text: truncateMessage(message) } }, true);
+  if (result.success) await recordSentMessage(commentId, 'dm', account.id);
+  return result.success;
+}
+
 async function sendStructuredInstagramMessage(
   recipient: InstagramRecipient,
   message: object,
   account: InstagramAccount
 ): Promise<boolean> {
+  const recipientId = 'id' in recipient ? recipient.id : undefined;
+  if (!await protectFollowerOutbound(account, recipientId, message)) return false;
+  const gated = isFollowerGateEnabled(account);
+  if (gated && recipientId && Date.now() >= followerInboundExpiry(account.id, recipientId)) return false;
   const rateLimit = await checkRateLimit(account.id);
   if (!rateLimit.allowed) {
     console.warn(`[Instagram] Structured message blocked by rate limit for account ${account.id}`);
@@ -312,6 +386,7 @@ async function sendStructuredInstagramMessage(
       await recordSentMessage(recipientKey, 'dm', account.id);
       return true;
     }
+    if (gated) return false; // No ambiguous retry or alternate-host send for gated automation.
   }
 
   // Some older Facebook-login connections require the Facebook Graph host.
@@ -332,6 +407,21 @@ async function sendStructuredInstagramMessage(
   return false;
 }
 
+/** Gate prompts respond only to the initiating inbound event; never queue or retry. */
+export async function sendInstagramGatePromptOnce(recipientId: string, message: string,
+  quickReplies: { title: string; payload: string }[], account: InstagramAccount, expiresAtMs: number): Promise<boolean> {
+  if (!Number.isFinite(expiresAtMs) || Date.now() >= expiresAtMs
+    || !await protectFollowerOutbound(account, recipientId, message)) return false;
+  const rate = await checkRateLimit(account.id); if (!rate.allowed) return false;
+  const token = await getAccessToken(account);
+  if (Date.now() >= expiresAtMs) return false;
+  const result = await graphRequest('/me/messages', token, 'POST', { recipient: { id: recipientId },
+    message: { text: truncateMessage(message), quick_replies: quickReplies.map(q => ({ content_type: 'text', title: q.title.substring(0, 20), payload: q.payload })) },
+  }, token.startsWith('IG'));
+  if (result.success) await recordSentMessage(recipientId, 'dm', account.id);
+  return result.success;
+}
+
 /**
  * Send the one private reply allowed from an Instagram comment. The quick
  * reply opens the normal messaging window only after the person taps it.
@@ -342,6 +432,9 @@ export async function sendInstagramPrivateReply(
   quickReplies: { title: string; payload: string }[],
   account: InstagramAccount
 ): Promise<boolean> {
+  if (isFacebookAccount(account)) {
+    return sendFacebookPrivateReply(commentId, message, account);
+  }
   return sendStructuredInstagramMessage(
     { comment_id: commentId },
     {
@@ -362,6 +455,9 @@ export async function sendInstagramQuickReplyDM(
   quickReplies: { title: string; payload: string }[],
   account: InstagramAccount
 ): Promise<boolean> {
+  if (isFacebookAccount(account)) {
+    return sendFacebookQuickReplyDM(recipientId, message, quickReplies, account);
+  }
   return sendStructuredInstagramMessage(
     { id: recipientId },
     {
@@ -382,6 +478,9 @@ export async function sendInstagramButtonDM(
   buttons: { title: string; url: string }[],
   account: InstagramAccount
 ): Promise<boolean> {
+  if (isFacebookAccount(account)) {
+    return sendFacebookButtonDM(recipientId, title, buttons, account);
+  }
   return sendStructuredInstagramMessage(
     { id: recipientId },
     {
@@ -411,6 +510,9 @@ export async function getInstagramUser(
   userId: string,
   account?: InstagramAccount
 ): Promise<InstagramUserProfile | null> {
+  if (account && isFacebookAccount(account)) {
+    return getFacebookUserProfile(userId, account);
+  }
   let accessToken: string;
 
   if (account) {
@@ -450,6 +552,9 @@ export async function getInstagramUser(
         lastError = 'Profile response was missing an ID or username';
       } else {
         lastError = result.error || lastError;
+        // These profile-access/auth failures are not fixed by changing hosts or fields.
+        // Optional enrichment must not amplify one rejected GET into four requests.
+        if (result.errorCode === 230 || result.errorCode === 190) return null;
       }
     }
   }
@@ -465,6 +570,7 @@ export async function getFollowers(
   account: InstagramAccount,
   limit: number = 100
 ): Promise<{ id: string; username: string }[]> {
+  if (isFacebookAccount(account)) return [];
   const accessToken = await getAccessToken(account);
 
   const result = await graphRequest(
@@ -516,6 +622,9 @@ export async function replyToComment(
   message: string,
   account?: InstagramAccount
 ): Promise<boolean> {
+  if (account && isFacebookAccount(account)) {
+    return replyToFacebookComment(commentId, message, account);
+  }
   let accessToken: string;
 
   if (account) {
@@ -655,6 +764,12 @@ export async function processMessageQueue(accountId?: string): Promise<number> {
  */
 export async function refreshAccessToken(accountId?: string): Promise<boolean> {
   if (accountId) {
+    const account = await getAccountById(accountId);
+    if (account && isFacebookAccount(account)) {
+      // Page tokens are renewed by reconnecting Facebook. The scheduled check
+      // verifies the current token without running Instagram's refresh grant.
+      return verifyFacebookPageConnection(account);
+    }
     // Refresh specific account
     const { refreshAccountToken } = await import('../auth/instagram-oauth');
     return await refreshAccountToken(accountId);
@@ -717,6 +832,7 @@ export async function refreshAccessToken(accountId?: string): Promise<boolean> {
  */
 export async function verifyAccountConnection(account: InstagramAccount): Promise<boolean> {
   try {
+    if (isFacebookAccount(account)) return verifyFacebookPageConnection(account);
     const accessToken = await getAccessToken(account);
 
     const result = await graphRequest(
@@ -752,6 +868,7 @@ export async function getUserPosts(
   account: InstagramAccount,
   limit: number = 25
 ): Promise<InstagramPost[]> {
+  if (isFacebookAccount(account)) return getFacebookPagePosts(account, limit);
   try {
     const accessToken = await getAccessToken(account);
     const isInstagramToken = accessToken?.startsWith('IGAA') || accessToken?.startsWith('IG');

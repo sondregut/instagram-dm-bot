@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Users, Download, Trash2, Mail, Phone, Filter } from 'lucide-react';
-import { cloudFunctions, Lead } from '@/lib/firebase';
+import { cloudFunctions } from '@/lib/firebase';
 import { Button } from '@/components/Button';
 import { Select } from '@/components/Select';
 import { formatDate, downloadCSV, cn } from '@/lib/utils';
@@ -12,7 +12,7 @@ import { styles } from '@/lib/styles';
 
 const sourceOptions = [
   { value: '', label: 'All Sources' },
-  { value: 'comment_to_dm', label: 'Comment to DM' },
+  { value: 'comment_to_dm', label: 'Comments' },
   { value: 'keyword_dm', label: 'Keyword DM' },
   { value: 'new_follower', label: 'New Follower' },
 ];
@@ -22,14 +22,16 @@ export default function LeadsPage() {
   const { selectedAccount, accounts, isLoading: accountsLoading } = useAccount();
   const [sourceFilter, setSourceFilter] = useState('');
   const [hasEmailFilter, setHasEmailFilter] = useState(false);
+  const [campaignFilter, setCampaignFilter] = useState('');
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['leads', selectedAccount?.id, sourceFilter, hasEmailFilter],
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['leads', selectedAccount?.id, sourceFilter, hasEmailFilter, campaignFilter],
     queryFn: async () => {
       const result = await cloudFunctions.getLeads({
         accountId: selectedAccount?.id,
         source: sourceFilter || undefined,
         hasEmail: hasEmailFilter || undefined,
+        automationId: campaignFilter || undefined,
         limit: 100,
       });
       return result.data;
@@ -51,10 +53,12 @@ export default function LeadsPage() {
       return cloudFunctions.exportLeads({
         accountId: selectedAccount?.id,
         source: sourceFilter || undefined,
+        automationId: campaignFilter || undefined,
+        hasEmail: hasEmailFilter || undefined,
       });
     },
     onSuccess: (result) => {
-      const filename = `leads-${new Date().toISOString().split('T')[0]}.csv`;
+      const filename = `leads-${selectedAccount?.username || 'account'}-${campaignFilter ? 'novaspeed' : 'all'}-${new Date().toISOString().split('T')[0]}.csv`;
       downloadCSV(result.data.csv, filename);
     },
   });
@@ -80,7 +84,7 @@ export default function LeadsPage() {
       <div>
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-900">Leads</h1>
-          <p className="text-gray-500 mt-1">Manage collected leads and contacts</p>
+          <p className="text-gray-500 mt-1">Collected contact details for manual follow-up. No emails are sent automatically.</p>
         </div>
         <div className="rounded-xl bg-white shadow-sm border border-gray-100">
           <NoAccountPrompt onConnectClick={() => window.location.href = '/settings'} />
@@ -94,11 +98,12 @@ export default function LeadsPage() {
       <div className="mb-8 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Leads</h1>
-          <p className="text-gray-500 mt-1">Manage collected leads and contacts</p>
+          <p className="text-gray-500 mt-1">Collected contact details for manual follow-up. No emails are sent automatically.</p>
         </div>
         <Button
           onClick={() => exportMutation.mutate()}
           loading={exportMutation.isPending}
+          disabled={!selectedAccount || isLoading || isError}
           variant="secondary"
         >
           <Download className="mr-1.5 h-4 w-4" />
@@ -107,13 +112,24 @@ export default function LeadsPage() {
       </div>
 
       {/* Filters */}
-      <div className="mb-6 flex items-center gap-4 p-4 bg-white rounded-xl shadow-sm border border-gray-100">
+      <div className="mb-6 flex flex-wrap items-center gap-4 p-4 bg-white rounded-xl shadow-sm border border-gray-100">
         <Filter className="h-4 w-4 text-gray-400" />
         <Select
           value={sourceFilter}
           onChange={(e) => setSourceFilter(e.target.value)}
           options={sourceOptions}
           className="w-44"
+          aria-label="Lead source"
+        />
+        <Select
+          value={campaignFilter}
+          onChange={(e) => setCampaignFilter(e.target.value)}
+          options={[
+            { value: '', label: 'All campaigns' },
+            { value: 'novaspeed-comment-email', label: 'NovaSpeed email collection' },
+          ]}
+          className="w-64"
+          aria-label="Lead campaign"
         />
         <label className="flex items-center gap-2 text-sm text-gray-600">
           <input
@@ -126,7 +142,13 @@ export default function LeadsPage() {
         </label>
       </div>
 
-      {isLoading ? (
+      {exportMutation.isError && <p role="alert" className="mb-4 text-sm text-status-error">Could not export leads. Please try again.</p>}
+      {isError ? (
+        <div role="alert" className="rounded-xl bg-white p-6 border border-gray-100">
+          <p className="mb-3 text-sm text-status-error">Could not load leads. Please try again.</p>
+          <Button variant="secondary" onClick={() => refetch()}>Retry</Button>
+        </div>
+      ) : isLoading ? (
         <div className="flex items-center justify-center h-64">
           <span className={styles.spinner} />
         </div>
@@ -143,7 +165,7 @@ export default function LeadsPage() {
           </p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl bg-white shadow-sm border border-gray-100">
+        <div className="overflow-x-auto rounded-xl bg-white shadow-sm border border-gray-100">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
@@ -155,6 +177,9 @@ export default function LeadsPage() {
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                   Source
+                </th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  Campaign
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
                   Date
@@ -202,6 +227,9 @@ export default function LeadsPage() {
                     <span className={cn(styles.badge.base, styles.badge.neutral, 'capitalize')}>
                       {lead.source.replace(/_/g, ' ')}
                     </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {lead.automationId === 'novaspeed-comment-email' ? 'NovaSpeed email collection' : lead.automationId || 'Other / unassigned'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {formatDate(lead.createdAt)}

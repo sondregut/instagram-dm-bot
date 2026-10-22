@@ -1,7 +1,10 @@
 import { randomUUID } from 'crypto';
+import { isTrackSpeedOnlyScope } from '../services/trackSpeedOnlyPolicy';
+import { resolveTrackSpeedCommentCampaign, trackSpeedCommentCampaign, TRACKSPEED_COMMENT_COOLDOWN_MS } from '../services/trackSpeedCommentCampaign';
+import { isSondreVaultCampaign } from '../services/vaultTrainingDestination';
 import * as admin from 'firebase-admin';
 import { db, InstagramAccount } from '../firebase';
-import { generateIsolatedAIResponseWithStatus } from '../services/ai';
+import { generateIsolatedAIResponseWithStatus, aiFailureHandoffReason } from '../services/ai';
 import { buildMindsetActionPlan, MindsetStage } from '../services/mindsetConversationEngine';
 import {
   replyToComment,
@@ -43,9 +46,12 @@ import {
   stageAfterConversionEvent,
 } from '../services/mindsetTrackingLogic';
 import { isMindsetModeActive } from '../utils/runtimeMode';
+import { checkRateLimit, recordSentMessage } from '../utils/rateLimiter';
+import { isFollowerGateEnabled, isFollowerGateRecipientBlocked, FOLLOWER_GATE_ACCOUNTS } from '../services/followerGatePolicy';
 import {
   isMindsetAccountAllowed,
   resolveMindsetCampaignForComment,
+  MindsetCampaign,
 } from '../services/mindsetCampaigns';
 import {
   buildMindsetConversationId,
@@ -61,6 +67,8 @@ import {
 } from '../services/mindsetCampaignJourney';
 import {
   MindsetCampaignTemplate,
+  isLinkOnlyCampaignTemplate,
+  mindsetCampaignProduct,
   normalizeMindsetCampaignTemplate,
 } from '../services/mindsetCampaignProduct';
 
@@ -175,6 +183,57 @@ function journeyForLead(
   return normalizeMindsetCampaignJourney(lead.campaignJourney, templateForLead(lead));
 }
 
+function openingMessageForAccount(
+  account: InstagramAccount,
+  template: MindsetCampaignTemplate,
+  journey: MindsetCampaignJourney,
+  campaign: MindsetCampaign
+): string {
+  if (isFollowerGateEnabled(account)) {
+    if (isSondreVaultCampaign(account, campaign)) {
+      return `Tap Check again to verify your follower access and get the link. If the button is missing, reply LINK.\n\nAppreciate you,\nSondre`;
+    }
+    return `Tap Following to check that you follow @${account.username} and get the ${mindsetCampaignProduct(template).name} link. If the button is missing, reply LINK.\n\nAppreciate you,\nSondre`;
+  }
+  if (account.platform !== 'facebook') return journey.openingMessage;
+  if (!/click below|button/i.test(journey.openingMessage)) {
+    return journey.openingMessage;
+  }
+  const product = mindsetCampaignProduct(template);
+  return `reply link and I’ll send you the link to download ${product.name}\n\nAppreciate you,\nSondre`;
+}
+
+async function sendFollowerGatePublicReply(commentId: string, message: string,
+  account: InstagramAccount): Promise<boolean> {
+  if (!(await checkRateLimit(account.id)).allowed) return false;
+  const accepted = await replyToComment(commentId, message, account);
+  if (accepted) await recordSentMessage(commentId, 'comment_reply', account.id);
+  return accepted;
+}
+
+function publicReplyForAccount(message: string, account: InstagramAccount): string {
+  return account.platform === 'facebook'
+    ? message.replace(/\bDMs?\b/gi, 'Messenger')
+    : message;
+}
+
+function destinationUrlForAccount(
+  journey: MindsetCampaignJourney,
+  account: InstagramAccount
+): string {
+  const directUrl = buildMindsetDirectAppUrl(journey.destinationUrl);
+  if (account.platform !== 'facebook') return directUrl;
+  try {
+    const url = new URL(directUrl);
+    if (url.searchParams.get('src') === 'instagram') {
+      url.searchParams.set('src', 'facebook');
+    }
+    return url.toString();
+  } catch {
+    return directUrl;
+  }
+}
+
 function isHistoryEntryInActiveCampaignSession(
   entry: NonNullable<MindsetLead['history']>[number],
   lead: MindsetLead
@@ -209,24 +268,60 @@ async function claimCommentEvent(eventId: string, accountId: string): Promise<bo
   });
 }
 
+/** Reserve once before sending. Unknown outcomes are never automatically replayed. */
+async function claimTrackSpeedComment(eventId: string, recipientId: string, account: InstagramAccount): Promise<boolean> {
+  const receipt = db.collection(COMMENT_EVENTS).doc(`${account.id}_${eventId}`);
+  const cooldown = db.collection('trackspeed_comment_cooldowns').doc(`${account.id}_${recipientId}`);
+  const now = admin.firestore.Timestamp.now();
+  return db.runTransaction(async tx => {
+    const [seen, prior] = await Promise.all([tx.get(receipt), tx.get(cooldown)]);
+    if (seen.exists) return false;
+    const data = prior.data();
+    if (data && (data.accountId !== account.id || data.ownerUserId !== account.userId || data.recipientId !== recipientId)) return false;
+    if (data && now.toMillis() - (data.reservedAt?.toMillis?.() || 0) < TRACKSPEED_COMMENT_COOLDOWN_MS) return false;
+    tx.create(receipt, { accountId: account.id, eventId, status: 'processing', processingStartedAt: now, updatedAt: now });
+    tx.set(cooldown, { accountId: account.id, ownerUserId: account.userId, recipientId, eventId, reservedAt: now });
+    return true;
+  });
+}
+
 export async function handleMindsetComment(
   event: MindsetCommentEvent,
   account: InstagramAccount
 ): Promise<boolean> {
-  if (!isAllowedAccount(account)) return false;
-  const campaign = await resolveMindsetCampaignForComment(
+  const speedOnly = isTrackSpeedOnlyScope(account);
+  const speedCampaign = speedOnly ? resolveTrackSpeedCommentCampaign(account, event) : null;
+  if (speedOnly && !speedCampaign) return true;
+  if (!speedOnly && !isAllowedAccount(account)) return false;
+  // Keyword guidance in our own public reply must never start another flow.
+  if (event.from.id === account.instagramAccountId
+    || event.from.username?.trim().replace(/^@/, '').toLowerCase() === account.username.toLowerCase()) {
+    console.log(`[Mindset] Ignoring own comment account=${account.id} comment=${event.id}`);
+    return true;
+  }
+  const campaign = speedCampaign || await resolveMindsetCampaignForComment(
     account,
     event.text,
     event.media.id
   );
   if (!campaign) return false;
-  if (!await claimCommentEvent(event.id, account.id)) return true;
+  if (!(speedOnly ? await claimTrackSpeedComment(event.id, event.from.id, account)
+    : await claimCommentEvent(event.id, account.id))) return true;
 
   const now = admin.firestore.Timestamp.now();
   const id = buildMindsetConversationId(account.id, event.from.id);
   const ref = db.collection(LEADS).doc(id);
   const existing = await ref.get();
   const existingLead = existing.data() as MindsetLead | undefined;
+  if (isFollowerGateEnabled(account)) {
+    const gateState = await db.collection('follower_gate_recipients').doc(id).get();
+    if (isFollowerGateRecipientBlocked(gateState.data(), existingLead)) {
+      await db.collection(COMMENT_EVENTS).doc(safeDocumentId(`${account.id}_${event.id}`))
+        .set({ status: 'completed', skippedReason: 'follower_gate_recipient_paused', privateReplySent: false,
+          publicReplySent: false, updatedAt: now }, { merge: true });
+      return true;
+    }
+  }
   if (existingLead && !isMindsetConversationIdentityMatch(existingLead, {
     documentId: id,
     accountId: account.id,
@@ -272,12 +367,13 @@ export async function handleMindsetComment(
   const stage: MindsetStage = 'awaiting_link_request';
   const campaignTemplate = normalizeMindsetCampaignTemplate(campaign.template);
   const campaignJourney = normalizeMindsetCampaignJourney(campaign.journey, campaignTemplate);
-  const privateMessage = campaignJourney.openingMessage;
+  const privateMessage = openingMessageForAccount(account, campaignTemplate, campaignJourney, campaign);
 
-  await ref.set({
+  const newLeadData = {
     id,
     accountId: account.id,
     ownerUserId: account.userId,
+    platform: account.platform || 'instagram',
     instagramUserId: event.from.id,
     username: event.from.username,
     initialCommentId: event.id,
@@ -317,32 +413,79 @@ export async function handleMindsetComment(
     }),
     createdAt: existingLead?.createdAt || now,
     updatedAt: now,
-  }, { merge: true });
+  };
+  if (speedOnly) {
+    const started = await db.runTransaction(async tx => {
+      const [latestLead, latestState, latestAccount] = await Promise.all([
+        tx.get(ref), tx.get(db.collection('follower_gate_recipients').doc(id)),
+        tx.get(db.collection('accounts').doc(account.id)),
+      ]);
+      const latest = latestLead.data();
+      if (!latestAccount.exists || !trackSpeedCommentCampaign({ ...latestAccount.data(), id: account.id } as InstagramAccount)
+        || latest?.automationPaused || latest?.stage === 'human_handoff'
+        || isFollowerGateRecipientBlocked(latestState.data(), latest)
+        || (latest && !isMindsetConversationIdentityMatch(latest as MindsetLead, {
+          documentId: id, accountId: account.id, instagramUserId: event.from.id, ownerUserId: account.userId,
+        }))) return false;
+      tx.set(ref, newLeadData, { merge: true });
+      return true;
+    });
+    if (!started) return true;
+  } else await ref.set(newLeadData, { merge: true });
   await cancelPendingFollowUps(id, 'new_campaign_session');
+
+  if (speedOnly) {
+    const [latestLead, latestState, latestAccount] = await Promise.all([ref.get(), db.collection('follower_gate_recipients').doc(id).get(), db.collection('accounts').doc(account.id).get()]);
+    const latest = latestLead.data();
+    if (!latestAccount.exists || !trackSpeedCommentCampaign({ ...latestAccount.data(), id: account.id } as InstagramAccount)
+      || latest?.campaignSessionId !== campaignSessionId || latest?.automationPaused || latest?.stage === 'human_handoff'
+      || isFollowerGateRecipientBlocked(latestState.data(), latest)) return true;
+  }
 
   const privateReplySent = await sendInstagramPrivateReply(
     event.id,
     privateMessage,
-    [{ title: campaignJourney.openingButtonText, payload: `mindset:send_link:${linkToken}` }],
+    [{ title: isFollowerGateEnabled(account)
+      ? isSondreVaultCampaign(account, campaign) ? 'Check again' : 'Following'
+      : campaignJourney.openingButtonText, payload: `mindset:send_link:${linkToken}` }],
     account
   );
 
   if (!privateReplySent) {
+    if (isFollowerGateEnabled(account)) {
+      // An unconfirmed API outcome must not turn a redelivery into another DM.
+      // The public fallback invites a new inbound interaction without claiming receipt.
+      const receipt = db.collection(COMMENT_EVENTS).doc(safeDocumentId(`${account.id}_${event.id}`));
+      await receipt.set({ status: 'completed', privateReplySent: false,
+        privateReplyStatus: 'not_confirmed', publicReplySent: false,
+        updatedAt: admin.firestore.Timestamp.now() }, { merge: true });
+      const publicReplySent = campaign.publicReplyEnabled === false ? null
+        : await sendFollowerGatePublicReply(event.id, `DM me ${campaign.keyword} to get started — I couldn’t confirm the first DM.`, account);
+      await receipt.set({ publicReplySent, updatedAt: admin.firestore.Timestamp.now() }, { merge: true });
+      return true;
+    }
     await db.collection(COMMENT_EVENTS)
       .doc(safeDocumentId(`${account.id}_${event.id}`))
       .set({ status: 'failed', updatedAt: admin.firestore.Timestamp.now() }, { merge: true });
-    throw new Error('Instagram private reply failed');
+    throw new Error(`${account.platform === 'facebook' ? 'Facebook' : 'Instagram'} private reply failed`);
   }
 
   // Reply publicly only after the private message succeeded so we never claim a DM was sent when it was not.
   const publicReply = campaign.publicReplyEnabled === false
     ? null
     : constrainMindsetAIReply(
-      chooseMindsetPublicReply(event.id, campaign.publicReplyText),
+      publicReplyForAccount(
+        isFollowerGateEnabled(account)
+          ? `Check your DMs, including Requests. If it’s missing, DM me ${campaign.keyword}.`
+          : chooseMindsetPublicReply(event.id, campaign.publicReplyText),
+        account
+      ),
       220
     );
   const publicReplySent = publicReply
-    ? await replyToComment(event.id, publicReply, account)
+    ? isFollowerGateEnabled(account)
+      ? await sendFollowerGatePublicReply(event.id, publicReply, account)
+      : await replyToComment(event.id, publicReply, account)
     : null;
 
   await Promise.all([
@@ -358,7 +501,9 @@ export async function handleMindsetComment(
     }, { merge: true }),
     db.collection(COMMENT_EVENTS)
       .doc(safeDocumentId(`${account.id}_${event.id}`))
-      .set({ status: 'completed', privateReplySent: true, publicReplySent, updatedAt: admin.firestore.Timestamp.now() }, { merge: true }),
+      .set({ status: 'completed', privateReplySent: true, publicReplySent,
+        ...(isFollowerGateEnabled(account) ? { privateReplyStatus: 'accepted' } : {}),
+        updatedAt: admin.firestore.Timestamp.now() }, { merge: true }),
   ]);
 
   return true;
@@ -369,6 +514,10 @@ async function scheduleFollowUp(
   type: FollowUpType,
   delayMs: number
 ): Promise<void> {
+  if (FOLLOWER_GATE_ACCOUNTS.some(account => account.id === lead.accountId)) {
+    const gateAccount = await db.collection('accounts').doc(lead.accountId).get();
+    if (gateAccount.exists && isFollowerGateEnabled({ ...gateAccount.data(), id: gateAccount.id } as InstagramAccount)) return;
+  }
   if (!isMindsetConversationRecordSelfConsistent(lead.id, lead)) {
     throw new Error('Conversation isolation check failed before scheduling follow-up');
   }
@@ -531,7 +680,7 @@ async function handleMindsetAction(
     const nextStage = CLOSED_FUNNEL_STAGES.has(lead.stage) ? lead.stage : 'link_sent';
     const messages = [
       journey.linkMessage,
-      buildMindsetDirectAppUrl(journey.destinationUrl),
+      destinationUrlForAccount(journey, account),
     ];
     for (let index = 0; index < messages.length; index++) {
       const message = messages[index];
@@ -602,7 +751,12 @@ async function handleMindsetAction(
         lead.campaignSessionId
       );
     } else {
-      const messages = [plan.message, ...(plan.additionalMessages || [])].filter(Boolean);
+      const directJourneyUrl = buildMindsetDirectAppUrl(journey.destinationUrl);
+      const messages = [plan.message, ...(plan.additionalMessages || [])]
+        .filter(Boolean)
+        .map((message) => message === directJourneyUrl
+          ? destinationUrlForAccount(journey, account)
+          : message);
       for (let index = 0; index < messages.length; index++) {
         const message = messages[index];
         const sent = await sendInstagramDM(senderId, message, account, { conversationId: ref.id });
@@ -706,6 +860,11 @@ export async function handleMindsetMessage(
       await profileRefreshPromise;
       return true;
     }
+    if (isLinkOnlyCampaignTemplate(templateForLead(lead)) && action !== 'send_link') {
+      await createSilentMindsetHandoff(ref, lead, 'link_only_campaign_reply');
+      await profileRefreshPromise;
+      return true;
+    }
     await handleMindsetAction(action, senderId, lead, ref, account, token);
     await profileRefreshPromise;
     return true;
@@ -715,7 +874,9 @@ export async function handleMindsetMessage(
     await updateLeadHistory(
       ref,
       'user',
-      text ? `${text} [Instagram attachment]` : '[Instagram attachment]',
+      text
+        ? `${text} [${account.platform === 'facebook' ? 'Facebook' : 'Instagram'} attachment]`
+        : `[${account.platform === 'facebook' ? 'Facebook' : 'Instagram'} attachment]`,
       {
         lastUserInteractionAt: now,
         unansweredFollowUpCount: 0,
@@ -750,6 +911,15 @@ export async function handleMindsetMessage(
     return true;
   }
   const intent = classifyMindsetReplyForStage(text, lead.stage);
+  if (isLinkOnlyCampaignTemplate(templateForLead(lead))) {
+    if (intent === 'app_link_request') {
+      await handleMindsetAction(intent, senderId, lead, ref, account);
+    } else {
+      await createSilentMindsetHandoff(ref, lead, 'link_only_campaign_reply');
+    }
+    await profileRefreshPromise;
+    return true;
+  }
   const mayContinueAfterClosedFunnel = [
     'app_link_request',
     'android_availability',
@@ -769,6 +939,7 @@ export async function handleMindsetMessage(
   );
   let scopeDecision = scopePrecheck;
   let scopeClassifierUsedAI = true;
+  let scopeFailureReason = 'scope_classifier_unavailable';
   if (scopePrecheck === 'classify') {
     const previousAssistantMessage = [...(lead.history || [])]
       .reverse()
@@ -791,13 +962,14 @@ export async function handleMindsetMessage(
       }
     );
     scopeClassifierUsedAI = scopeResult.usedAI;
+    scopeFailureReason = aiFailureHandoffReason(scopeResult, 'scope_classifier_unavailable');
     scopeDecision = scopeResult.usedAI
       ? parseMindsetScopeDecision(scopeResult.text)
       : 'uncertain';
   }
   if (scopeDecision !== 'in_scope') {
     const handoffReason = !scopeClassifierUsedAI
-      ? 'scope_classifier_unavailable'
+      ? scopeFailureReason
       : scopeDecision === 'off_topic'
         ? 'off_topic'
         : scopeDecision === 'human_required'
@@ -869,7 +1041,7 @@ export async function handleMindsetMessage(
     await createSilentMindsetHandoff(
       ref,
       lead,
-      aiResult.usedAI ? 'automated_reply_suppressed' : 'ai_provider_unavailable'
+      aiResult.usedAI ? 'automated_reply_suppressed' : aiFailureHandoffReason(aiResult, 'ai_provider_unavailable')
     );
     await profileRefreshPromise;
     return true;
@@ -919,6 +1091,11 @@ export async function processMindsetFollowUps(): Promise<number> {
 
       const lead = leadSnapshot.data() as MindsetLead;
       const account = { ...accountSnapshot.data(), id: accountSnapshot.id } as InstagramAccount;
+      if (isFollowerGateEnabled(account)) {
+        await doc.ref.update({ status: 'cancelled_follower_gate', updatedAt: now });
+        processed++;
+        continue;
+      }
       if (!isAllowedAccount(account)) throw new Error('Account blocked by safety gate');
       if (!isMindsetFollowUpIdentityMatch(
         item,

@@ -59,6 +59,29 @@ export interface ChatMessage {
 export interface AIResponseResult {
   text: string;
   usedAI: boolean;
+  failureReason?: AIUnavailableReason;
+}
+
+export type AIUnavailableReason = 'billing' | 'authentication' | 'rate_limit' | 'provider' | 'configuration' | 'empty_response';
+
+/** Classify provider failures without logging request bodies, credentials or user text. */
+export function classifyAIProviderFailure(error: unknown): { reason: AIUnavailableReason; httpStatus?: number } {
+  const value = error as { status?: unknown; message?: unknown } | null;
+  const status = typeof value?.status === 'number' ? value.status : undefined;
+  const message = typeof value?.message === 'string' ? value.message : '';
+  const reason = (status === 400 || status === 402) && /credit balance is too low|insufficient credits/i.test(message)
+    ? 'billing' : status === 401 || status === 403 ? 'authentication'
+      : status === 429 ? 'rate_limit' : 'provider';
+  return { reason, ...(status === undefined ? {} : { httpStatus: status }) };
+}
+
+function reportAIUnavailable(reason: AIUnavailableReason, httpStatus?: number): void {
+  console.error(JSON.stringify({ severity: 'ERROR', event: 'dm_ai_unavailable', provider: 'anthropic',
+    reason, ...(httpStatus === undefined ? {} : { httpStatus }) }));
+}
+
+export function aiFailureHandoffReason(result: AIResponseResult, fallback: string): string {
+  return !result.usedAI && result.failureReason ? `ai_${result.failureReason}_unavailable` : fallback;
 }
 
 export interface AIResponseOptions {
@@ -88,8 +111,8 @@ export async function generateAIResponseWithStatus(
   // Get Anthropic client
   const client = await getAnthropic();
   if (!client) {
-    console.warn('[AI] Anthropic client unavailable; using explicit handoff fallback');
-    return { text: fallbackResponse, usedAI: false };
+    reportAIUnavailable('configuration');
+    return { text: fallbackResponse, usedAI: false, failureReason: 'configuration' };
   }
 
   // Build enhanced system prompt with knowledge base context
@@ -123,16 +146,16 @@ export async function generateAIResponseWithStatus(
     const aiMessage = extractAnthropicText(response.content);
 
     if (!aiMessage) {
-      const blockTypes = response.content.map((block) => block.type).join(',') || 'none';
-      console.error(`[AI] Claude returned no text blocks (types: ${blockTypes}; stop: ${response.stop_reason || 'unknown'})`);
-      return { text: fallbackResponse, usedAI: false };
+      reportAIUnavailable('empty_response');
+      return { text: fallbackResponse, usedAI: false, failureReason: 'empty_response' };
     }
 
     console.log('[AI] Claude response generated successfully');
     return { text: aiMessage, usedAI: true };
   } catch (error) {
-    console.error('[AI] Claude request failed:', error instanceof Error ? error.message : 'unknown error');
-    return { text: fallbackResponse, usedAI: false };
+    const failure = classifyAIProviderFailure(error);
+    reportAIUnavailable(failure.reason, failure.httpStatus);
+    return { text: fallbackResponse, usedAI: false, failureReason: failure.reason };
   }
 }
 

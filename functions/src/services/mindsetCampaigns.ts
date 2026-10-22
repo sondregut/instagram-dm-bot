@@ -8,16 +8,20 @@ import {
   MindsetCampaignStatus,
   normalizeMindsetCampaignKeyword,
   normalizeMindsetCampaignPostMode,
+  parseMindsetTargetAccountUsernames,
   selectNextCampaignPostId,
   shouldUseRuntimeCampaign,
 } from './mindsetCampaignLogic';
 import {
-  containsConfiguredMindsetKeyword,
   DEFAULT_MINDSET_PUBLIC_REPLY_TEXT,
   getConfiguredMindsetKeyword,
   validateMindsetTestConfiguration,
 } from './mindsetFlowLogic';
 import { getBotMode, isMindsetModeActive } from '../utils/runtimeMode';
+import { matchesCommentKeyword, compareCommentKeywords } from '../utils/commentKeywordMatching';
+import { isPoleVaultAccount } from './poleVaultAccount';
+import { isVerifiedFollowerGateAccount } from './followerGatePolicy';
+import { isTrackSpeedOnlyScope } from './trackSpeedOnlyPolicy';
 import { getUserPosts, InstagramPost } from './instagram';
 import {
   DEFAULT_MINDSET_CAMPAIGN_JOURNEY,
@@ -55,23 +59,47 @@ export interface MindsetCampaign {
   updatedAt?: admin.firestore.Timestamp;
 }
 
-function targetAccountUsername(): string {
-  return (process.env.MINDSET_TARGET_ACCOUNT_USERNAME || '').trim().toLowerCase();
+function targetAccountUsernames(): Set<string> {
+  return parseMindsetTargetAccountUsernames(
+    process.env.MINDSET_TARGET_ACCOUNT_USERNAMES,
+    process.env.MINDSET_TARGET_ACCOUNT_USERNAME
+  );
 }
 
 export function isMindsetTargetAccount(account: InstagramAccount): boolean {
-  const target = targetAccountUsername();
-  return !!target && account.username.trim().toLowerCase() === target;
+  const username = account.username.trim().toLowerCase().replace(/^@/, '');
+  return isVerifiedFollowerGateAccount(account) || isPoleVaultAccount(account) || targetAccountUsernames().has(username);
 }
 
 export function isMindsetAccountAllowed(account: InstagramAccount): boolean {
-  return isMindsetModeActive() && isMindsetTargetAccount(account);
+  // The dedicated SPEED-only webhook branch must never enter generic campaigns,
+  // runtime MINDSET, standalone JUMP/recovery, or app-reminder scheduling.
+  if (isTrackSpeedOnlyScope(account)) return false;
+  if (!isMindsetModeActive()) return false;
+  if (account.platform === 'facebook') {
+    return account.isMindsetWorkspace === true
+      && account.webhookSubscribed === true
+      && account.automationMode !== 'paused';
+  }
+  return isMindsetTargetAccount(account);
+}
+
+/** Facebook starts in a channel-local test mode while Instagram stays live. */
+export function mindsetCampaignModeForAccount(account: InstagramAccount): string {
+  if (account.platform !== 'facebook') return getBotMode();
+  if (account.automationMode === 'live') return 'mindset';
+  if (account.automationMode === 'test') return 'test';
+  return 'disabled';
 }
 
 export function runtimeMindsetCampaign(account: InstagramAccount): MindsetCampaign | null {
   if (!isMindsetAccountAllowed(account)) return null;
+  // The environment-backed runtime campaign is shared by the explicitly
+  // allowlisted Instagram accounts. Facebook Pages must opt into an explicit
+  // stored campaign.
+  if (account.platform === 'facebook' || isPoleVaultAccount(account)) return null;
 
-  const mode = getBotMode();
+  const mode = mindsetCampaignModeForAccount(account);
   const keyword = normalizeMindsetCampaignKeyword(getConfiguredMindsetKeyword());
   const safety = validateMindsetTestConfiguration(account.username, keyword, mode);
   if (!safety.allowed) {
@@ -246,7 +274,7 @@ async function resolveNextPostCampaign(
   const lockedCampaign = await lockNextPostCampaign(account, campaign, posts, mode);
   return lockedCampaign
     && lockedCampaign.nextPostId === postId
-    && containsConfiguredMindsetKeyword(commentText, lockedCampaign.keyword)
+    && matchesCommentKeyword(commentText, lockedCampaign.keyword)
     ? lockedCampaign
     : null;
 }
@@ -258,12 +286,13 @@ export async function resolveMindsetCampaignForComment(
 ): Promise<MindsetCampaign | null> {
   if (!isMindsetAccountAllowed(account)) return null;
 
-  const mode = getBotMode();
+  const mode = mindsetCampaignModeForAccount(account);
   const storedCampaigns = await getStoredMindsetCampaigns(account.id);
   const activeStoredCampaigns = getActiveStoredMindsetCampaigns(storedCampaigns, mode)
-    .filter((campaign) => campaign.ownerUserId === account.userId);
+    .filter((campaign) => campaign.ownerUserId === account.userId)
+    .sort((left, right) => compareCommentKeywords(commentText, left.keyword, right.keyword));
   for (const campaign of activeStoredCampaigns) {
-    if (!containsConfiguredMindsetKeyword(commentText, campaign.keyword)) continue;
+    if (!matchesCommentKeyword(commentText, campaign.keyword)) continue;
     if (campaign.postMode === 'next') {
       const nextPostMatch = await resolveNextPostCampaign(
         account,
@@ -286,7 +315,7 @@ export async function resolveMindsetCampaignForComment(
   return fallback
     && !runtimeKeywordClaimedByStoredCampaign
     && campaignTargetsPost(fallback, postId)
-    && containsConfiguredMindsetKeyword(commentText, fallback.keyword)
+    && matchesCommentKeyword(commentText, fallback.keyword)
     ? fallback
     : null;
 }

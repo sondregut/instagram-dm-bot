@@ -95,7 +95,7 @@ export interface DashboardStats {
   };
 }
 
-export type LeadSource = 'comment_to_dm' | 'keyword_dm' | 'new_follower' | 'story_reply' | 'story_mention' | 'flow' | 'manual';
+export type LeadSource = 'comment' | 'comment_to_dm' | 'keyword_dm' | 'new_follower' | 'story_reply' | 'story_mention' | 'flow' | 'manual';
 
 export interface Lead {
   id: string;
@@ -117,6 +117,7 @@ export interface Lead {
 export interface GetLeadsParams {
   accountId?: string;
   source?: string;
+  automationId?: string;
   hasEmail?: boolean;
   hasPhone?: boolean;
   limit?: number;
@@ -131,6 +132,8 @@ export interface GetLeadsResult {
 export interface ExportLeadsParams {
   accountId?: string;
   source?: string;
+  automationId?: string;
+  hasEmail?: boolean;
   startDate?: string;
   endDate?: string;
 }
@@ -303,9 +306,14 @@ export interface AccountSettings {
 
 export interface InstagramAccount {
   id: string;
+  platform: 'instagram' | 'facebook';
   username: string;
   instagramAccountId: string;
+  pageId?: string;
   pageName?: string;
+  profilePictureUrl?: string;
+  automationMode?: 'test' | 'live' | 'paused';
+  webhookSubscribed?: boolean;
   aiPersonality: AIPersonality;
   settings: AccountSettings;
   connectionStatus: 'connected' | 'expired' | 'error';
@@ -359,7 +367,7 @@ export interface InstagramPost {
 
 export type MindsetCampaignStatus = 'draft' | 'test' | 'live' | 'paused';
 export type MindsetCampaignPostMode = 'any' | 'specific' | 'next';
-export type MindsetCampaignTemplate = 'athlete_mindset_download' | 'vault_tracker_download';
+export type MindsetCampaignTemplate = 'athlete_mindset_download' | 'vault_tracker_download' | 'trackspeed_download' | 'trackjump_download';
 export type MindsetCampaignFollowUpKey = 'noClick' | 'downloadCheck' | 'useCheck' | 'feedbackCheck' | 'resourceOffer';
 
 export interface MindsetCampaignFollowUp {
@@ -489,6 +497,7 @@ export interface MindsetOverview {
   account: {
     id: string;
     username: string;
+    platform?: 'instagram' | 'facebook';
     connectionStatus: InstagramAccount['connectionStatus'];
   };
   runtime: {
@@ -627,6 +636,7 @@ export const cloudFunctions = {
   // OAUTH & ACCOUNTS
   // ============================================
   getInstagramOAuthUrl: httpsCallable<{ redirectUrl?: string }, { url: string; state: string }>(functions, 'getInstagramOAuthUrl'),
+  getFacebookOAuthUrl: httpsCallable<{ redirectUrl?: string }, { url: string; state: string }>(functions, 'getFacebookOAuthUrl'),
   getUserAccounts: httpsCallable<void, InstagramAccount[]>(functions, 'getUserAccounts'),
   disconnectInstagramAccount: httpsCallable<{ accountId: string }, { success: boolean }>(functions, 'disconnectInstagramAccount'),
   updateAccountSettings: httpsCallable<{

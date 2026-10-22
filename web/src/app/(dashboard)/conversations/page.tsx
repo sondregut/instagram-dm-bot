@@ -117,6 +117,7 @@ export default function ConversationsPage() {
 
   if (accountsLoading) return <InboxSkeleton />;
   if (accounts.length === 0 || !selectedAccount) return <EmptyAccount />;
+  const platform = selectedAccount.platform || 'instagram';
 
   return (
     <div className="space-y-5">
@@ -221,6 +222,7 @@ export default function ConversationsPage() {
                 <ConversationListItem
                   key={conversation.id}
                   conversation={conversation}
+                  platform={platform}
                   selected={conversation.id === selectedId}
                   onSelect={() => {
                     setSelectedId(conversation.id);
@@ -243,6 +245,7 @@ export default function ConversationsPage() {
             <ConversationDetail
               key={selectedConversation.id}
               conversation={selectedConversation}
+              platform={platform}
               reviewMode={reviewMode}
               replyPending={replyMutation.isPending}
               controlPending={automationMutation.isPending}
@@ -275,8 +278,9 @@ export default function ConversationsPage() {
   );
 }
 
-function ConversationListItem({ conversation, selected, onSelect }: {
+function ConversationListItem({ conversation, platform, selected, onSelect }: {
   conversation: MindsetConversation;
+  platform: 'instagram' | 'facebook';
   selected: boolean;
   onSelect: () => void;
 }) {
@@ -295,12 +299,13 @@ function ConversationListItem({ conversation, selected, onSelect }: {
       <div className="flex gap-3">
         <InstagramAvatar
           username={conversation.username}
+          platform={platform}
           src={conversation.profilePictureUrl}
           fallbackClassName={tone === 'attention' ? 'bg-amber-100 text-amber-800' : undefined}
         />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-3">
-            <p className="truncate text-sm font-semibold text-slate-950">@{conversation.username}</p>
+            <p className="truncate text-sm font-semibold text-slate-950">{conversationDisplayName(conversation.username, platform)}</p>
             <span className="flex-shrink-0 text-[11px] text-slate-400">{formatRelativeTimestamp(conversation.updatedAt)}</span>
           </div>
           <p className="mt-1 truncate text-xs leading-5 text-slate-500">{latestConversationMessage(conversation)}</p>
@@ -318,6 +323,7 @@ function ConversationListItem({ conversation, selected, onSelect }: {
 
 function ConversationDetail({
   conversation,
+  platform,
   reviewMode,
   replyPending,
   controlPending,
@@ -327,6 +333,7 @@ function ConversationDetail({
   onBack,
 }: {
   conversation: MindsetConversation;
+  platform: 'instagram' | 'facebook';
   reviewMode: boolean;
   replyPending: boolean;
   controlPending: boolean;
@@ -336,6 +343,8 @@ function ConversationDetail({
   onBack: () => void;
 }) {
   const [draft, setDraft] = useState('');
+  const channelName = platform === 'facebook' ? 'Messenger' : 'Instagram';
+  const displayName = conversationDisplayName(conversation.username, platform);
   const previousBotConversation = isPreviousBotConversation(conversation);
   const unansweredFollowUpCount = conversation.automation.unansweredFollowUpCount || 0;
   const maxUnansweredFollowUps = conversation.automation.maxUnansweredFollowUps || 2;
@@ -362,31 +371,36 @@ function ConversationDetail({
           </button>
           <InstagramAvatar
             username={conversation.username}
+            platform={platform}
             src={conversation.profilePictureUrl}
             fallbackClassName="bg-slate-950 text-white"
             eager
           />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="truncate font-semibold text-slate-950">@{conversation.username}</h2>
+              <h2 className="truncate font-semibold text-slate-950">{displayName}</h2>
               <ConversationBadge conversation={conversation} />
             </div>
             <p className="mt-0.5 text-xs text-slate-500">
               {conversation.keyword
                 ? <>Keyword <span className="font-mono font-semibold text-slate-700">{conversation.keyword}</span></>
                 : previousBotConversation
-                  ? 'Earlier Instagram bot conversation'
-                  : 'Instagram direct message'}
+                  ? 'Earlier bot conversation'
+                  : `${channelName} message`}
             </p>
           </div>
-          <a
-            href={`https://www.instagram.com/${encodeURIComponent(conversation.username)}/`}
-            target="_blank"
-            rel="noreferrer"
-            className="hidden h-9 items-center gap-1.5 rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:border-slate-400 sm:flex"
-          >
-            Instagram <ArrowSquareOut size={15} />
-          </a>
+          {platform === 'instagram' ? (
+            <a
+              href={`https://www.instagram.com/${encodeURIComponent(conversation.username)}/`}
+              target="_blank"
+              rel="noreferrer"
+              className="hidden h-9 items-center gap-1.5 rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:border-slate-400 sm:flex"
+            >
+              Instagram <ArrowSquareOut size={15} />
+            </a>
+          ) : (
+            <span className="hidden h-9 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-600 sm:flex">Messenger</span>
+          )}
         </div>
 
         {conversation.handoff && (
@@ -408,6 +422,7 @@ function ConversationDetail({
                 {!isAssistant && (
                   <InstagramAvatar
                     username={conversation.username}
+                    platform={platform}
                     src={conversation.profilePictureUrl}
                     className="mt-auto h-7 w-7 text-[10px] shadow-sm"
                     fallbackClassName="bg-white text-slate-500"
@@ -419,7 +434,7 @@ function ConversationDetail({
                       ? 'Sondre'
                       : isAssistant
                         ? previousBotConversation ? 'Earlier bot' : 'Athlete Mindset'
-                        : `@${conversation.username}`}
+                        : displayName}
                   </p>
                   <div className={cn(
                     'inline-block rounded-2xl px-3.5 py-2.5 text-left text-sm leading-6 shadow-sm',
@@ -452,14 +467,16 @@ function ConversationDetail({
               <p className="text-sm font-semibold text-slate-900">Earlier bot conversation</p>
               <p className="mt-1 text-xs leading-5 text-slate-500">The complete stored transcript is available here. Replies and automation controls remain read-only for safety.</p>
             </div>
-            <a
-              href={`https://www.instagram.com/${encodeURIComponent(conversation.username)}/`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:border-slate-400"
-            >
-              Open Instagram <ArrowSquareOut size={15} />
-            </a>
+            {platform === 'instagram' && (
+              <a
+                href={`https://www.instagram.com/${encodeURIComponent(conversation.username)}/`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-700 transition hover:border-slate-400"
+              >
+                Open Instagram <ArrowSquareOut size={15} />
+              </a>
+            )}
           </div>
         ) : (
         <div className="border-t border-slate-200 bg-white px-4 py-4 sm:px-5">
@@ -498,16 +515,16 @@ function ConversationDetail({
               disabled={!conversation.automation.canReply || replyPending}
               maxLength={500}
               rows={2}
-              placeholder={conversation.automation.canReply ? 'Write a direct, personal reply…' : 'Instagram messaging window closed'}
+              placeholder={conversation.automation.canReply ? 'Write a direct, personal reply…' : `${channelName} reply window closed`}
               className="w-full resize-none rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm leading-5 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:bg-slate-100"
             />
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-[11px] text-slate-500">
                 {reviewMode
-                  ? 'Preview only. No Instagram message will be sent.'
+                  ? `Preview only. No ${channelName} message will be sent.`
                   : conversation.automation.canReply
                     ? `Standard reply window closes ${formatRelativeTimestamp(conversation.automation.messagingWindowEndsAt)}.`
-                    : 'The standard Instagram reply window is closed.'}
+                    : `The standard ${channelName} reply window is closed.`}
               </p>
               <div className="flex items-center gap-2">
                 <span className={cn('font-mono text-[10px]', draft.length > 450 ? 'text-amber-700' : 'text-slate-400')}>{draft.length}/500</span>
@@ -536,7 +553,7 @@ function ConversationDetail({
               <p className="mt-2 text-xs leading-5 text-slate-500">This thread predates Athlete Mindset conversion tracking, so download and payment milestones are not available.</p>
             </div>
             <dl className="mt-6 space-y-3 border-t border-slate-200 pt-6 text-xs">
-              <InfoRow label="Source" value="Earlier Instagram bot" />
+              <InfoRow label="Source" value="Earlier bot" />
               <InfoRow label="Messages" value={String(conversation.history.length)} />
               <InfoRow label="Started" value={formatRelativeTimestamp(conversation.createdAt)} />
               <InfoRow label="Last athlete reply" value={formatRelativeTimestamp(conversation.lastUserInteractionAt)} />
@@ -624,7 +641,7 @@ function previousBotStateLabel(state: MindsetConversation['previousBotState']): 
     ai_chat: 'AI conversation',
     completed: 'Completed',
   };
-  return state ? labels[state] : 'Earlier Instagram conversation';
+  return state ? labels[state] : 'Earlier conversation';
 }
 
 function ConversationBadge({ conversation }: { conversation: MindsetConversation }) {
@@ -660,7 +677,7 @@ function nextStepForStage(stage: MindsetConversationStage): string {
     trial_started: 'Stop selling and help them get first-week value.',
     subscribed: 'Converted. Focus only on retention and value.',
     ai_follow_up: 'Continue helping with their current blocker.',
-    human_handoff: 'Reply personally in Instagram.',
+    human_handoff: 'Reply personally in the inbox.',
     completed: 'No further follow-up is scheduled.',
   };
   return nextSteps[stage];
@@ -675,5 +692,12 @@ function ConversationListSkeleton() {
 }
 
 function EmptyAccount() {
-  return <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center"><ChatsCircle size={32} className="mx-auto text-slate-300" /><p className="mt-3 font-semibold text-slate-900">Connect @sondre_pv to open the inbox.</p></div>;
+  return <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center"><ChatsCircle size={32} className="mx-auto text-slate-300" /><p className="mt-3 font-semibold text-slate-900">Connect Instagram or a Facebook Page to open the inbox.</p></div>;
+}
+
+function conversationDisplayName(
+  username: string,
+  platform: 'instagram' | 'facebook'
+): string {
+  return platform === 'facebook' ? username : `@${username}`;
 }

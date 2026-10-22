@@ -34,3 +34,8 @@ npm-debug.log*
 # Service account keys (never commit these!)
 *-firebase-adminsdk-*.json
 serviceAccountKey.json
+
+# Local release verification and CLI metadata
+/deployment-evidence/
+**/.vercel/
+/functions/node_modules

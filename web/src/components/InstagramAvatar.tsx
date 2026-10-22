@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 
 interface InstagramAvatarProps {
   username: string;
+  platform?: 'instagram' | 'facebook';
   src?: string | null;
   className?: string;
   fallbackClassName?: string;
@@ -13,6 +14,7 @@ interface InstagramAvatarProps {
 
 export function InstagramAvatar({
   username,
+  platform = 'instagram',
   src,
   className,
   fallbackClassName,
@@ -26,7 +28,7 @@ export function InstagramAvatar({
   return (
     <span
       role="img"
-      aria-label={`@${normalizedUsername} Instagram profile picture`}
+      aria-label={`${platform === 'facebook' ? normalizedUsername : `@${normalizedUsername}`} ${platform === 'facebook' ? 'Facebook' : 'Instagram'} profile picture`}
       data-avatar-state={showPhoto ? 'profile-photo' : 'fallback'}
       className={cn(
         'relative grid h-10 w-10 flex-shrink-0 place-items-center overflow-hidden rounded-full bg-slate-100 text-sm font-bold text-slate-700 ring-1 ring-inset ring-slate-950/10',

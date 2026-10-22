@@ -19,7 +19,7 @@ test('sends a requested app link as its own real message', () => {
   const plan = buildMindsetActionPlan('app_link_request', 'ai_follow_up', activationUrl);
   assert.ok(plan);
   assert.equal(plan.message, 'here you go! hope you like it');
-  assert.deepEqual(plan.additionalMessages, ['https://athletemindset.app/app']);
+  assert.deepEqual(plan.additionalMessages, ['https://apps.apple.com/app/id6757452747']);
   assert.equal(plan.nextStage, 'ai_follow_up');
   assert.equal(plan.buttons, undefined);
 });

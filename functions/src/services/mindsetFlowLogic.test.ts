@@ -72,6 +72,8 @@ test('defaults to a unique test keyword rather than the live Manychat keyword', 
 test('supports an explicit keyword only when supplied', () => {
   assert.equal(containsConfiguredMindsetKeyword('CUSTOMTEST', 'CUSTOMTEST'), true);
   assert.equal(containsConfiguredMindsetKeyword('AMDMTEST8472', 'CUSTOMTEST'), false);
+  assert.equal(containsConfiguredMindsetKeyword(undefined, 'MINDSET'), false);
+  assert.equal(containsConfiguredMindsetKeyword(null, 'MINDSET'), false);
 });
 
 test('test mode allows sondre_pv but blocks the live Manychat keyword', () => {
@@ -149,12 +151,14 @@ test('recognizes app-link requests without overriding opt-outs', () => {
     assert.equal(isMindsetAppLinkRequest(message), true, message);
   }
   assert.equal(isMindsetAppLinkRequest("Don't send it again"), false);
-  assert.equal(MINDSET_DIRECT_APP_URL, 'https://athletemindset.app/app');
-  assert.equal(buildMindsetDirectAppUrl(), 'https://athletemindset.app/app');
+  assert.equal(MINDSET_DIRECT_APP_URL, 'https://apps.apple.com/app/id6757452747');
+  assert.equal(buildMindsetDirectAppUrl(), MINDSET_DIRECT_APP_URL);
   assert.equal(
     buildMindsetDirectAppUrl('https://athletemindset.app/app?source=reel'),
-    'https://athletemindset.app/app?source=reel'
+    MINDSET_DIRECT_APP_URL
   );
+  assert.equal(buildMindsetDirectAppUrl('https://www.athletemindset.app/app/'), MINDSET_DIRECT_APP_URL);
+  assert.equal(buildMindsetDirectAppUrl('https://example.com/custom-app'), 'https://example.com/custom-app');
   assert.equal(buildMindsetDirectAppUrl('http://example.com'), MINDSET_DIRECT_APP_URL);
 });
 
@@ -333,8 +337,8 @@ test('adds conversation attribution to a campaign-specific HTTPS destination', (
     'lead-token',
     'https://athletemindset.app/app?source=campaign'
   ));
-  assert.equal(destination.origin + destination.pathname, 'https://athletemindset.app/app');
-  assert.equal(destination.searchParams.get('source'), 'campaign');
+  assert.equal(destination.origin + destination.pathname, MINDSET_DIRECT_APP_URL);
+  assert.equal(destination.searchParams.get('source'), null);
   assert.equal(destination.searchParams.get('utm_source'), 'instagram');
   assert.equal(destination.searchParams.get('utm_medium'), 'dm');
   assert.equal(destination.searchParams.get('ig_lead'), 'lead-token');
@@ -390,9 +394,9 @@ test('feeds the canonical app journey and navigation rules to Claude', () => {
   assert.doesNotMatch(onboardingPrompt, /say you are his automated assistant/i);
   assert.match(onboardingPrompt, /Never repeat a question/i);
   assert.match(onboardingPrompt, /do not want the app/i);
-  assert.match(onboardingPrompt, /This Instagram assistant is not Aomi/i);
-  assert.match(onboardingPrompt, /current Instagram conversation as a sealed conversation/i);
-  assert.match(onboardingPrompt, /another Instagram user's conversation/i);
+  assert.match(onboardingPrompt, /This social messaging assistant is not Aomi/i);
+  assert.match(onboardingPrompt, /current campaign conversation as a sealed conversation/i);
+  assert.match(onboardingPrompt, /another person's campaign conversation/i);
   assert.match(onboardingPrompt, /original language/i);
   assert.match(onboardingPrompt, /\[\[HANDOFF\]\]/);
   assert.match(onboardingPrompt, /\[\[SEND_APP_LINK\]\]/);
@@ -412,7 +416,7 @@ test('feeds Claude only the Vault guide for a Vault campaign', () => {
   assert.match(prompt, /must not give pole-vault technique, equipment-selection, medical, or injury advice/i);
   assert.match(prompt, /another product campaign/i);
   assert.doesNotMatch(prompt, /Home, Training, Progress, and Profile/);
-  assert.doesNotMatch(prompt, /Instagram assistant is not Aomi/i);
+  assert.doesNotMatch(prompt, /social messaging assistant is not Aomi/i);
 
   const classifier = buildMindsetScopeClassifierPrompt(
     'ai_follow_up',

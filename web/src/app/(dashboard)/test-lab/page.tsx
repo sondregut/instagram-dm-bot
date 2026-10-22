@@ -141,6 +141,8 @@ export default function TestLabPage() {
               >
                 <option value="athlete_mindset_download">Athlete Mindset</option>
                 <option value="vault_tracker_download">Vault</option>
+                <option value="trackspeed_download">TrackSpeed</option>
+                <option value="trackjump_download">TrackJump</option>
               </select>
             </label>
             <label className="block">
@@ -172,7 +174,7 @@ export default function TestLabPage() {
                 <div key={`${index}-${message.content}`} className={cn('flex gap-2.5', assistant ? 'justify-end' : 'justify-start')}>
                   {!assistant && <span className="mt-auto grid h-8 w-8 place-items-center rounded-full border border-slate-200 bg-white text-slate-500"><UserCircle size={18} weight="fill" /></span>}
                   <div className={cn('max-w-[82%] sm:max-w-[70%]', assistant && 'text-right')}>
-                    <p className="mb-1 px-1 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{assistant ? template === 'vault_tracker_download' ? 'Vault' : 'Athlete Mindset' : 'Test athlete'}</p>
+                    <p className="mb-1 px-1 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{assistant ? template === 'vault_tracker_download' ? 'Vault' : template === 'trackspeed_download' ? 'TrackSpeed' : template === 'trackjump_download' ? 'TrackJump' : 'Athlete Mindset' : 'Test athlete'}</p>
                     <p className={cn('inline-block rounded-2xl px-3.5 py-2.5 text-left text-sm leading-6 shadow-sm', assistant ? 'rounded-br-md bg-emerald-700 text-white' : 'rounded-bl-md border border-slate-200 bg-white text-slate-800')}>{message.content}</p>
                   </div>
                   {assistant && <span className="mt-auto grid h-8 w-8 place-items-center rounded-full bg-slate-950 text-emerald-300"><Robot size={17} weight="fill" /></span>}

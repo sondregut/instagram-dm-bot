@@ -170,12 +170,25 @@ export async function simulateReviewMindsetTurn(
 ): Promise<MindsetTestTurnResult> {
   const message = normalize(input.message);
   if (!message) throw new Error('Enter a test message.');
+  if (input.template === 'trackspeed_download' || input.template === 'trackjump_download') {
+    const appLink = input.template === 'trackspeed_download'
+      ? 'https://apps.apple.com/us/app/trackspeed-sprint-timer/id6757509163'
+      : 'https://apps.apple.com/us/app/trackjump-jump-height-rsi/id6809517672';
+    const linkRequest = input.quickReplyPayload?.startsWith('mindset:send_link:')
+      || /\b(?:send|resend|share|give).{0,20}\blink\b|\blink please\b/i.test(message);
+    return linkRequest
+      ? { ...result('Here you go!', 'link_sent'), additionalReplies: [appLink] }
+      : result('', 'human_handoff', {
+        createsHandoff: true,
+        handoffReason: 'link_only_campaign_reply',
+      });
+  }
   const isQuestion = message.endsWith('?');
   const vault = input.template === 'vault_tracker_download';
   const appName = vault ? 'Vault' : 'Athlete Mindset';
   const appLink = vault
     ? 'https://stavhopp.no/get?src=instagram'
-    : 'https://athletemindset.app/app';
+    : 'https://apps.apple.com/app/id6757452747';
 
   const affirmative = /^(?:yes|yeah|yep|yup|yes i did|i did|sure did|already did|done)[.!\s]*$/
     .test(message);

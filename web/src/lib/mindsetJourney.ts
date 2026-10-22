@@ -21,7 +21,7 @@ export const DEFAULT_MINDSET_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
   openingButtonText: 'Send me the link',
   linkMessage: 'here you go! hope you like it',
   linkButtonText: 'Download App',
-  destinationUrl: 'https://athletemindset.app/app',
+  destinationUrl: 'https://apps.apple.com/app/id6757452747',
   followUps: {
     noClick: {
       enabled: true,
@@ -86,18 +86,46 @@ export const DEFAULT_VAULT_CAMPAIGN_JOURNEY: MindsetCampaignJourney = {
   },
 };
 
+function linkOnlyJourney(name: string, destinationUrl: string): MindsetCampaignJourney {
+  return {
+    openingMessage: `Click below to get the ${name} App Store link!\n\nIf you don't see the button, reply link.\n\nAppreciate you,\nSondre`,
+    openingButtonText: 'Send me the link',
+    linkMessage: 'Here you go!',
+    linkButtonText: 'Download App',
+    destinationUrl,
+    followUps: {
+      noClick: { enabled: false, delayMinutes: 8 * 60, message: '' },
+      downloadCheck: { enabled: false, delayMinutes: 30, message: '' },
+      useCheck: { enabled: false, delayMinutes: 8 * 60, message: '' },
+      feedbackCheck: { enabled: false, delayMinutes: 5, message: '' },
+      resourceOffer: { enabled: false, delayMinutes: 8 * 60, message: '' },
+    },
+  };
+}
+
+export const DEFAULT_TRACKSPEED_CAMPAIGN_JOURNEY = linkOnlyJourney(
+  'TrackSpeed', 'https://apps.apple.com/us/app/trackspeed-sprint-timer/id6757509163'
+);
+export const DEFAULT_TRACKJUMP_CAMPAIGN_JOURNEY = linkOnlyJourney(
+  'TrackJump', 'https://apps.apple.com/us/app/trackjump-jump-height-rsi/id6809517672'
+);
+
 export function normalizeMindsetCampaignTemplate(value: unknown): MindsetCampaignTemplate {
-  return value === 'vault_tracker_download'
-    ? 'vault_tracker_download'
-    : 'athlete_mindset_download';
+  if (value === 'vault_tracker_download'
+      || value === 'trackspeed_download'
+      || value === 'trackjump_download') return value;
+  return 'athlete_mindset_download';
 }
 
 export function defaultMindsetCampaignJourney(
   template: MindsetCampaignTemplate
 ): MindsetCampaignJourney {
-  return template === 'vault_tracker_download'
-    ? DEFAULT_VAULT_CAMPAIGN_JOURNEY
-    : DEFAULT_MINDSET_CAMPAIGN_JOURNEY;
+  switch (template) {
+    case 'vault_tracker_download': return DEFAULT_VAULT_CAMPAIGN_JOURNEY;
+    case 'trackspeed_download': return DEFAULT_TRACKSPEED_CAMPAIGN_JOURNEY;
+    case 'trackjump_download': return DEFAULT_TRACKJUMP_CAMPAIGN_JOURNEY;
+    default: return DEFAULT_MINDSET_CAMPAIGN_JOURNEY;
+  }
 }
 
 const LEGACY_OPENING_MESSAGES = new Set([
@@ -144,11 +172,12 @@ function linkMessageValue(value: unknown, fallback: string): string {
 function followUpValue(
   key: MindsetCampaignFollowUpKey,
   value: Partial<MindsetCampaignFollowUp> | undefined,
-  fallback: MindsetCampaignFollowUp
+  fallback: MindsetCampaignFollowUp,
+  disabled = false
 ): MindsetCampaignFollowUp {
   const message = textValue(value?.message, fallback.message);
   return {
-    enabled: typeof value?.enabled === 'boolean' ? value.enabled : fallback.enabled,
+    enabled: disabled ? false : typeof value?.enabled === 'boolean' ? value.enabled : fallback.enabled,
     delayMinutes: typeof value?.delayMinutes === 'number' && Number.isFinite(value.delayMinutes)
       ? Math.round(value.delayMinutes)
       : fallback.delayMinutes,
@@ -164,18 +193,32 @@ export function normalizeMindsetCampaignJourney(
 ): MindsetCampaignJourney {
   const defaults = defaultMindsetCampaignJourney(normalizeMindsetCampaignTemplate(templateValue));
   const followUps = value?.followUps || {} as MindsetCampaignJourney['followUps'];
+  const linkOnly = templateValue === 'trackspeed_download' || templateValue === 'trackjump_download';
   return {
     openingMessage: openingMessageValue(value?.openingMessage, defaults.openingMessage),
     openingButtonText: textValue(value?.openingButtonText, defaults.openingButtonText),
     linkMessage: linkMessageValue(value?.linkMessage, defaults.linkMessage),
     linkButtonText: textValue(value?.linkButtonText, defaults.linkButtonText),
-    destinationUrl: textValue(value?.destinationUrl, defaults.destinationUrl),
+    destinationUrl: (() => {
+      const destination = textValue(value?.destinationUrl, defaults.destinationUrl);
+      if (normalizeMindsetCampaignTemplate(templateValue) !== 'athlete_mindset_download') return destination;
+      try {
+        const url = new URL(destination);
+        return url.protocol === 'https:' && !url.username && !url.password
+          && ['athletemindset.app', 'www.athletemindset.app'].includes(url.hostname)
+          && url.pathname.replace(/\/$/, '') === '/app'
+          ? defaults.destinationUrl
+          : destination;
+      } catch {
+        return destination;
+      }
+    })(),
     followUps: {
-      noClick: followUpValue('noClick', followUps.noClick, defaults.followUps.noClick),
-      downloadCheck: followUpValue('downloadCheck', followUps.downloadCheck, defaults.followUps.downloadCheck),
-      useCheck: followUpValue('useCheck', followUps.useCheck, defaults.followUps.useCheck),
-      feedbackCheck: followUpValue('feedbackCheck', followUps.feedbackCheck, defaults.followUps.feedbackCheck),
-      resourceOffer: followUpValue('resourceOffer', followUps.resourceOffer, defaults.followUps.resourceOffer),
+      noClick: followUpValue('noClick', followUps.noClick, defaults.followUps.noClick, linkOnly),
+      downloadCheck: followUpValue('downloadCheck', followUps.downloadCheck, defaults.followUps.downloadCheck, linkOnly),
+      useCheck: followUpValue('useCheck', followUps.useCheck, defaults.followUps.useCheck, linkOnly),
+      feedbackCheck: followUpValue('feedbackCheck', followUps.feedbackCheck, defaults.followUps.feedbackCheck, linkOnly),
+      resourceOffer: followUpValue('resourceOffer', followUps.resourceOffer, defaults.followUps.resourceOffer, linkOnly),
     },
   };
 }

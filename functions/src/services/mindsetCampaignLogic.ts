@@ -27,6 +27,17 @@ export function normalizeMindsetCampaignKeyword(keyword: string): string {
   return keyword.trim().toUpperCase();
 }
 
+export function parseMindsetTargetAccountUsernames(
+  configuredUsernames: string | undefined,
+  legacyUsername: string | undefined
+): Set<string> {
+  const source = configuredUsernames?.trim() || legacyUsername?.trim() || '';
+  return new Set(source
+    .split(',')
+    .map((username) => username.trim().toLowerCase().replace(/^@/, ''))
+    .filter(Boolean));
+}
+
 export function normalizeMindsetCampaignPostMode(
   campaign: Pick<MindsetCampaignMatchInput, 'postIds' | 'postMode'>
 ): MindsetCampaignPostMode {
