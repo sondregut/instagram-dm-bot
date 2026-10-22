@@ -1,4 +1,5 @@
-import { writeNovaMessage, queueNovaLead, recordNovaOutbound, isExplicitNovaReply, novaRecordId } from '../services/novaSpeedRecords';
+import { writeNovaMessage, queueNovaLead, recordNovaOutbound, isExplicitNovaReply, novaRecordId, queueNovaInterestJob } from '../services/novaSpeedRecords';
+import { recordNovaInterest, refreshNovaInterest } from '../services/novaSpeedInterest';
 import * as admin from 'firebase-admin';
 import { createHash } from 'crypto';
 import { matchesCommentKeyword } from '../utils/commentKeywordMatching';
@@ -340,6 +341,7 @@ export async function handleNovaSpeedComment(event: any, a: InstagramAccount, re
   const commentAt = Number.isFinite(parsed) ? parsed : receivedAt;
   const expiresAt = commentAt + NOVASPEED_SESSION_MS - 60_000;
   if (!Number.isFinite(receivedAt) || commentAt > Date.now() + 60_000 || Date.now() >= expiresAt) return;
+  await recordNovaInterest(a, event, receivedAt, commentAt, Boolean(event.timestamp && Number.isFinite(parsed)));
   const reserved = await db.runTransaction(async tx => {
     const [guard, receipt] = await Promise.all([readGuard(tx, a, r), tx.get(ref)]);
     if (!guard.allowed || receipt.exists) return false;
@@ -381,6 +383,9 @@ export async function handleNovaSpeedComment(event: any, a: InstagramAccount, re
   } catch {
     // No provider text, credentials, comment text or email is copied to logs.
     await ref.update({ status: 'outcome_uncertain', updatedAt: stamp() });
+  } finally {
+    try { await refreshNovaInterest(a, r, event.id); }
+    catch { console.error('[NovaSpeed] Interest reporting refresh failed; no messages retried'); }
   }
 }
 
@@ -406,6 +411,7 @@ export async function handleSharedNovaSpeedMessage(event: any, a: InstagramAccou
     // follow-up rules are preserved, including its own pause/opt-out behavior.
     if (s.status === 'awaiting_email' || s.status === 'opening_reserved') {
       await sessionRef(a, r).update({ status: 'superseded', updatedAt: stamp() });
+      try { await refreshNovaInterest(a, r, s.commentId); } catch { /* Reporting cannot alter message routing. */ }
     }
     return false;
   }
@@ -449,6 +455,7 @@ export async function handleNovaSpeedMessage(event: any, a: InstagramAccount): P
       tx.create(receipt, { accountId: a.id, instagramUserId: r, status: 'stopped', createdAt: stamp() });
       tx.set(session, { accountId: a.id, ownerUserId: a.userId, instagramUserId: r,
         status: stop ? 'opted_out' : 'human_handoff', paused: true, updatedAt: stamp() }, { merge: true });
+      if (guard.state?.commentId) queueNovaInterestJob(tx, a, 'contact', `novaspeed_${a.id}_${r}`);
       return null;
     }
     const s = guard.state;

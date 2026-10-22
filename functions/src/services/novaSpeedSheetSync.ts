@@ -4,13 +4,19 @@ import { randomUUID } from 'crypto';
 import { GoogleAuth } from 'google-auth-library';
 import { db } from '../firebase';
 import { NOVA_CAMPAIGN, NOVA_IDENTITIES, novaRecordScope } from './novaSpeedRecords';
+import { novaContactId, novaCommentId, novaProfileUrl, novaPostUrl, novaUsername } from './novaSpeedInterest';
 
 export const NOVA_SHEET_ID = '135d_fwLhZA42ryvNLw9mVr2vuOqxTKUj9pDV_PNbKmA';
 const SHEETS_BASE = `https://sheets.googleapis.com/v4/spreadsheets/${NOVA_SHEET_ID}`;
 export const NOVA_HEADERS = {
   Leads: ['Email', 'Instagram handle', 'Source account', 'Campaign', 'Captured time (UTC)', 'Follow-up status', 'Sent date', 'Notes', 'Lead ID', 'Conversation ID'],
   Messages: ['Message ID', 'Lead ID', 'Conversation ID', 'Source account', 'Instagram handle', 'Timestamp (UTC)', 'Direction', 'Message text', 'Notes'],
+  Contacts: ['Contact ID', 'Source account', 'Instagram user ID', 'Instagram handle', 'Instagram profile URL', 'Display name', 'Email collection status', 'Email', 'First interest (UTC)', 'Last interest (UTC)', 'Comment count', 'Latest comment ID', 'Latest conversation ID', 'Follow-up status', 'Notes', 'Profile evidence'],
+  Comments: ['Record ID', 'Contact ID', 'Source account', 'Comment ID', 'Instagram user ID', 'Instagram handle', 'Comment text', 'Comment time (UTC)', 'Time evidence', 'Observed time (UTC)', 'Post URL', 'Media ID', 'Conversation ID', 'Processing status', 'Private prompt status', 'Public reply status', 'Notes'],
 };
+export const NOVA_TABLES = { Leads: { id: 2024332428, lastColumn: 'J' }, Messages: { id: 1323160632, lastColumn: 'I' },
+  Contacts: { id: 1864307251, lastColumn: 'P' }, Comments: { id: 1864307252, lastColumn: 'Q' } };
+const unavailable = (v: any): string => typeof v === 'string' && v ? v : 'Unavailable (not recorded)';
 const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
 // Existing runtime identity; no service-account key, user refresh token or new grant.
 export const novaSheetsTransport = {
@@ -49,6 +55,23 @@ export function novaSheetUpdates(job: any, record: any, rows: any[][], capacity:
       { range: `Leads!I${n}:J${n}`, values: [[job.recordId, record.conversationId]] },
     ];
   }
+  if (job.kind === 'contact') {
+    const n = novaSheetRow(rows, 0, job.recordId, capacity).row;
+    // N:O are manual. A missing email is explicitly distinct from a collected lead.
+    return [{ range: `Contacts!A${n}:M${n}`, values: [[job.recordId, record.sourceAccount, record.instagramUserId,
+      unavailable(novaUsername(record.username)), unavailable(novaProfileUrl(record.username)), unavailable(record.displayName),
+      record.emailStatus, record.email || 'Not collected', unavailable(iso(record.firstInterestAt)), unavailable(iso(record.lastInterestAt)),
+      record.commentCount, unavailable(record.lastCommentId), unavailable(record.conversationId)]] },
+      { range: `Contacts!P${n}:P${n}`, values: [[unavailable(record.profileEvidence)]] }];
+  }
+  if (job.kind === 'comment') {
+    const n = novaSheetRow(rows, 0, job.recordId, capacity).row;
+    // Q is manual. Historical source gaps are explicit, never reconstructed from copy.
+    return [{ range: `Comments!A${n}:P${n}`, values: [[job.recordId, record.contactId, record.sourceAccount, record.commentId,
+      record.instagramUserId, unavailable(novaUsername(record.username)), unavailable(record.text), unavailable(iso(record.commentAt)),
+      unavailable(record.timeEvidence), unavailable(iso(record.observedAt)), unavailable(novaPostUrl(record.postUrl)), unavailable(record.mediaId),
+      record.conversationId, record.processingStatus, record.privateReplyStatus || 'Not recorded', record.publicReplyStatus || 'Not recorded']] }];
+  }
   const pos = novaSheetRow(rows, 0, job.recordId, capacity), n = pos.row;
   // I (Notes) is exclusively manual; all text uses RAW input, never formulas.
   return [{ range: `Messages!A${n}:H${n}`, values: [[job.recordId, record.leadId, record.conversationId,
@@ -60,7 +83,7 @@ export async function runNovaSheetJob(jobId: string): Promise<void> {
   if (!job || job.status !== 'pending') return;
   const verify = job.kind === 'verify' && jobId === 'verify-novaspeed-v1';
   const identity = NOVA_IDENTITIES.find(x => x.id === job.accountId && x.userId === job.ownerUserId);
-  if (!identity || job.campaignId !== NOVA_CAMPAIGN || !['lead', 'message', 'verify'].includes(job.kind) || (job.kind === 'verify' && !verify)) {
+  if (!identity || job.campaignId !== NOVA_CAMPAIGN || !['lead', 'message', 'contact', 'comment', 'verify'].includes(job.kind) || (job.kind === 'verify' && !verify)) {
     await ref.update({ status: 'rejected_scope', updatedAt: timestamp() }); return;
   }
   const account = (await db.collection('accounts').doc(identity.id).get()).data();
@@ -70,16 +93,52 @@ export async function runNovaSheetJob(jobId: string): Promise<void> {
     if (typeof job.recordId !== 'string' || !/^[A-Za-z0-9_-]{1,250}$/.test(job.recordId)) {
       await ref.update({ status: 'rejected_scope', updatedAt: timestamp() }); return;
     }
-    record = (await db.collection(job.kind === 'lead' ? 'leads' : 'novaspeed_messages').doc(job.recordId).get()).data();
+    const collection = job.kind === 'lead' ? 'leads' : job.kind === 'message' ? 'novaspeed_messages'
+      : job.kind === 'contact' ? 'novaspeed_contacts' : 'novaspeed_comments';
+    record = (await db.collection(collection).doc(job.recordId).get()).data();
     const owner = job.kind === 'lead' ? record?.userId : record?.ownerUserId;
     const campaign = job.kind === 'lead' ? record?.automationId : record?.campaignId;
     if (!record || owner !== identity.userId || record.accountId !== identity.id || campaign !== NOVA_CAMPAIGN
-      || !record.instagramUserId || record.conversationId !== `${identity.id}_${record.instagramUserId}_${record.sourceCommentId || record.commentId}` || (job.kind === 'lead' && (!record.email || job.recordId !== `novaspeed_${identity.id}_${record.instagramUserId}`))
+      || typeof record.instagramUserId !== 'string' || !/^[A-Za-z0-9_-]{1,180}$/.test(record.instagramUserId)
+      || record.conversationId !== `${identity.id}_${record.instagramUserId}_${record.sourceCommentId || record.commentId || record.lastCommentId}`
+      || (job.kind === 'lead' && (!record.email || job.recordId !== `novaspeed_${identity.id}_${record.instagramUserId}`))
+      || (job.kind === 'contact' && (record.id !== job.recordId || job.recordId !== novaContactId(identity.id, record.instagramUserId)
+        || !Number.isInteger(record.commentCount) || record.commentCount < 1))
+      || (job.kind === 'comment' && (record.id !== job.recordId || job.recordId !== novaCommentId(identity.id, record.commentId)
+        || record.contactId !== novaContactId(identity.id, record.instagramUserId)))
       || (job.kind === 'message' && (record.id !== job.recordId || !['Incoming', 'Outgoing'].includes(record.direction)
         || !['received', 'accepted'].includes(record.status)))) {
       await ref.update({ status: 'rejected_scope', updatedAt: timestamp() }); return;
     }
     record = { ...record, sourceAccount: identity.username };
+    if (job.kind === 'contact') {
+      const [leadDoc, sessionDoc] = await Promise.all([
+        db.collection('leads').doc(job.recordId).get(),
+        db.collection('novaspeed_sessions').doc(`${identity.id}_${record.instagramUserId}`).get(),
+      ]);
+      const lead = leadDoc.data(), session = sessionDoc.data();
+      if ((lead && (lead.accountId !== identity.id || lead.userId !== identity.userId || lead.automationId !== NOVA_CAMPAIGN
+        || lead.instagramUserId !== record.instagramUserId))
+        || (session && (session.accountId !== identity.id || session.ownerUserId !== identity.userId
+          || session.instagramUserId !== record.instagramUserId || session.campaignId !== NOVA_CAMPAIGN))) {
+        await ref.update({ status: 'rejected_scope', updatedAt: timestamp() }); return;
+      }
+      record.email = lead?.email || '';
+      const statuses: Record<string, string> = { awaiting_email: 'Awaiting email', opening_reserved: 'Prompt pending',
+        opted_out: 'Opted out', human_handoff: 'Manual handling', superseded: 'Another campaign active', email_collected: 'Email record unavailable' };
+      record.emailStatus = record.email ? 'Email collected' : session?.paused ? 'Manual handling'
+        : statuses[session?.status] || 'Interested; no email collected';
+    }
+    if (job.kind === 'comment') {
+      const receipt = (await db.collection('novaspeed_events').doc(`${identity.id}_comment_${record.commentId}`).get()).data();
+      if (receipt && (receipt.accountId !== identity.id || receipt.ownerUserId !== identity.userId
+        || receipt.instagramUserId !== record.instagramUserId || receipt.commentId !== record.commentId)) {
+        await ref.update({ status: 'rejected_scope', updatedAt: timestamp() }); return;
+      }
+      record.processingStatus = receipt?.status || 'Not admitted to a new DM session';
+      record.privateReplyStatus = receipt?.privateReplyStatus || '';
+      record.publicReplyStatus = receipt?.publicReplyStatus || '';
+    }
   }
   const leaseRef = db.collection('novaspeed_sheet_locks').doc(NOVA_SHEET_ID), leaseId = randomUUID();
   const acquired = await db.runTransaction(async tx => {
@@ -91,14 +150,16 @@ export async function runNovaSheetJob(jobId: string): Promise<void> {
   try {
     const metadata = await novaSheetsTransport.request('?fields=spreadsheetId,sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)))');
     const tables: Record<string, number> = {};
-    for (const [name, id] of [['Leads', 2024332428], ['Messages', 1323160632]] as const) {
+    for (const [name, details] of Object.entries(NOVA_TABLES)) {
+      const id = details.id;
       const sheet = metadata?.sheets?.find((s: any) => s.properties?.sheetId === id)?.properties;
-      if (sheet?.title !== name || sheet.gridProperties?.columnCount < (name === 'Leads' ? 10 : 9)
+      if (sheet?.title !== name || sheet.gridProperties?.columnCount < NOVA_HEADERS[name as keyof typeof NOVA_HEADERS].length
         || !Number.isInteger(sheet.gridProperties?.rowCount) || sheet.gridProperties.rowCount > 10000) throw new Error('NovaSpeed Sheet structure changed; review required');
       tables[name] = sheet.gridProperties.rowCount;
     }
-    const table = job.kind === 'message' ? 'Messages' : 'Leads';
-    const ranges = verify ? ['Leads!A1:J1', 'Messages!A1:I1'] : [`${table}!A1:${table === 'Leads' ? 'J' : 'I'}${tables[table]}`];
+    const table = job.kind === 'message' ? 'Messages' : job.kind === 'contact' ? 'Contacts' : job.kind === 'comment' ? 'Comments' : 'Leads';
+    const ranges = verify ? Object.entries(NOVA_TABLES).map(([name, details]) => `${name}!A1:${details.lastColumn}1`)
+      : [`${table}!A1:${NOVA_TABLES[table].lastColumn}${tables[table]}`];
     const query = new URLSearchParams({ valueRenderOption: 'UNFORMATTED_VALUE' }); ranges.forEach(r => query.append('ranges', r));
     const read = await novaSheetsTransport.request('/values:batchGet?' + query.toString());
     const values = read.valueRanges || [];

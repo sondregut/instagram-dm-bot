@@ -2,12 +2,12 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const admin=require('firebase-admin'),{db}=require('../lib/firebase');
 const mem=require('./memory-firestore.cjs').memoryFirestore();db.collection=mem.collection;db.runTransaction=mem.runTransaction;
 const mod=require('../lib/services/novaSpeedSheetSync'),r=require('../lib/services/novaSpeedRecords');
-const a=r.NOVA_IDENTITIES[0],rows={Leads:[mod.NOVA_HEADERS.Leads],Messages:[mod.NOVA_HEADERS.Messages]};let writes=0,uncertain=false;
+const a=r.NOVA_IDENTITIES[0],rows=Object.fromEntries(Object.entries(mod.NOVA_HEADERS).map(([k,v])=>[k,[v]]));let writes=0,uncertain=false;
 mod.novaSheetsTransport.request=async(path,data)=>{
- if(path.startsWith('?fields='))return{sheets:[{properties:{sheetId:2024332428,title:'Leads',gridProperties:{rowCount:1000,columnCount:26}}},{properties:{sheetId:1323160632,title:'Messages',gridProperties:{rowCount:1000,columnCount:26}}}]};
+ if(path.startsWith('?fields='))return{sheets:Object.entries(mod.NOVA_TABLES).map(([title,x])=>({properties:{sheetId:x.id,title,gridProperties:{rowCount:1000,columnCount:26}}}))};
  if(path.startsWith('/values:batchGet')){const ranges=new URLSearchParams(path.split('?')[1]).getAll('ranges');return{valueRanges:ranges.map(range=>({values:rows[range.split('!')[0]].map(x=>[...x])}))}};
  assert.equal(path,'/values:batchUpdate');assert.equal(data.valueInputOption,'RAW');writes++;
- for(const update of data.data){const m=update.range.match(/^(Leads|Messages)!([A-Z])(\d+):([A-Z])(\d+)$/);assert(m);const[,table,col,n]=m;const i=Number(n)-1;rows[table][i]||=[];for(const[v,x]of update.values[0].entries())rows[table][i][col.charCodeAt(0)-65+v]=x;}
+ for(const update of data.data){const m=update.range.match(/^(Leads|Messages|Contacts|Comments)!([A-Z])(\d+):([A-Z])(\d+)$/);assert(m);const[,table,col,n]=m;const i=Number(n)-1;rows[table][i]||=[];for(const[v,x]of update.values[0].entries())rows[table][i][col.charCodeAt(0)-65+v]=x;}
  if(uncertain){uncertain=false;throw Error('Synthetic response lost after server applied write')}
  return{};
 };
@@ -36,6 +36,23 @@ test('other campaign, owner, account and mismatched conversation are rejected wi
 });
 test('verification job reads structure without inventing Sheet records',async()=>{
  const n=writes;await db.collection('novaspeed_sheet_outbox').doc('verify-novaspeed-v1').set({...job,kind:'verify'});await mod.runNovaSheetJob('verify-novaspeed-v1');assert.equal(writes,n);assert.equal(mem.records.get('novaspeed_sheet_outbox/verify-novaspeed-v1').status,'verified');
+});
+test('interested contacts and comments sync without email; missing facts are explicit and manual columns survive retries',async()=>{
+ const cid='novaspeed_'+a.id+'_interest',rid=a.id+'_interest-comment',sessionId=a.id+'_interest';
+ const base={accountId:a.id,ownerUserId:a.userId,campaignId:r.NOVA_CAMPAIGN,instagramUserId:'interest',username:'fixture',conversationId:sessionId+'_interest-comment'};
+ await db.collection('novaspeed_contacts').doc(cid).set({...base,id:cid,commentCount:1,lastCommentId:'interest-comment',firstInterestAt:admin.firestore.Timestamp.fromMillis(3000),lastInterestAt:admin.firestore.Timestamp.fromMillis(3000),profileEvidence:'Historical session username; URL derived'});
+ await db.collection('novaspeed_comments').doc(rid).set({...base,id:rid,contactId:cid,commentId:'interest-comment',mediaId:'media',commentAt:admin.firestore.Timestamp.fromMillis(3000),observedAt:admin.firestore.Timestamp.fromMillis(3000),timeEvidence:'Stored receipt time; original unavailable'});
+ await db.collection('novaspeed_sessions').doc(sessionId).set({...base,status:'awaiting_email'});
+ for(const[kind,id]of [['contact',cid],['comment',rid]]){await db.collection('novaspeed_sheet_outbox').doc(kind+'_'+id).set({...job,kind,recordId:id});await mod.runNovaSheetJob(kind+'_'+id)}
+ assert.equal(rows.Contacts[1][6],'Awaiting email');assert.equal(rows.Contacts[1][7],'Not collected');assert.equal(rows.Contacts[1][4],'https://www.instagram.com/fixture/');assert.equal(rows.Contacts[1][5],'Unavailable (not recorded)');
+ assert.equal(rows.Comments[1][6],'Unavailable (not recorded)');assert.equal(rows.Comments[1][10],'Unavailable (not recorded)');
+ rows.Contacts[1][13]='Manual follow-up';rows.Contacts[1][14]='Keep this note';rows.Comments[1][16]='Comment note';
+ await db.collection('leads').doc(cid).set({...lead,id:cid,instagramUserId:'interest',sourceCommentId:'interest-comment',conversationId:base.conversationId});
+ await db.collection('novaspeed_events').doc(a.id+'_comment_interest-comment').set({...base,commentId:'interest-comment',status:'completed',privateReplyStatus:'accepted',publicReplyStatus:'accepted'});
+ for(const[kind,id]of [['contact',cid],['comment',rid]]){await db.collection('novaspeed_sheet_outbox').doc(kind+'_'+id).update({status:'pending',revision:2});await mod.runNovaSheetJob(kind+'_'+id)}
+ assert.equal(rows.Contacts.length,2);assert.equal(rows.Contacts[1][6],'Email collected');assert.deepEqual(rows.Contacts[1].slice(13,15),['Manual follow-up','Keep this note']);assert.equal(rows.Comments[1][16],'Comment note');assert.deepEqual(rows.Comments[1].slice(13,16),['completed','accepted','accepted']);
+ // A same-ID record in another campaign must never supply an email to this contact.
+ await db.collection('leads').doc(cid).update({automationId:'mindset'});await db.collection('novaspeed_sheet_outbox').doc('contact_'+cid).update({status:'pending'});const n=writes;await mod.runNovaSheetJob('contact_'+cid);assert.equal(writes,n);assert.equal(mem.records.get('novaspeed_sheet_outbox/contact_'+cid).status,'rejected_scope');
 });
 test('duplicate IDs, capacity and active lease fail safely with work retained',async()=>{
  assert.throws(()=>mod.novaSheetRow([['id'],['x'],['x']],0,'x',10),/duplicate/);

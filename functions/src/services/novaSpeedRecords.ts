@@ -1,5 +1,5 @@
 import * as admin from 'firebase-admin';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { db, InstagramAccount } from '../firebase';
 
 export const NOVA_CAMPAIGN = 'novaspeed-comment-email';
@@ -44,6 +44,15 @@ export function queueNovaLead(tx: FirebaseFirestore.Transaction, a: InstagramAcc
   tx.set(db.collection('novaspeed_sheet_outbox').doc('lead_' + leadId),
     { kind: 'lead', recordId: leadId, accountId: a.id, ownerUserId: a.userId, campaignId: NOVA_CAMPAIGN,
       conversationId: novaConversationId(a, s), revision: 1, status: 'pending', updatedAt: admin.firestore.Timestamp.now() });
+  queueNovaInterestJob(tx, a, 'contact', leadId);
+}
+export function queueNovaInterestJob(tx: FirebaseFirestore.Transaction, a: InstagramAccount,
+  kind: 'contact' | 'comment', recordId: string): void {
+  if (!novaRecordScope(a) || !/^[A-Za-z0-9_-]{1,250}$/.test(recordId)) return;
+  tx.set(db.collection('novaspeed_sheet_outbox').doc(`${kind}_${recordId}`), {
+    kind, recordId, accountId: a.id, ownerUserId: a.userId, campaignId: NOVA_CAMPAIGN,
+    revision: randomUUID(), status: 'pending', updatedAt: admin.firestore.Timestamp.now(),
+  });
 }
 export async function recordNovaOutbound(a: InstagramAccount, s: any, key: string, text: string,
   status: 'attempt_reserved' | 'accepted' | 'not_confirmed', providerMessageId?: string): Promise<void> {
