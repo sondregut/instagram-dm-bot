@@ -17,9 +17,10 @@ const c={id:'fixture-campaign',accountId:a.id,ownerUserId:a.userId,name:'App fix
 const stamp=ms=>admin.firestore.Timestamp.fromMillis(ms);const id=r=>a.id+'_'+r;const lead=r=>db.collection('mindset_leads').doc(id(r));const state=r=>db.collection('follower_gate_recipients').doc(id(r));let seq=0;
 const event=(r,text='yes',payload)=>({sender:{id:r},recipient:{id:a.instagramAccountId},timestamp:Date.now(),message:{mid:'synthetic-confirmation-'+(++seq),text,...(payload?{quick_reply:{payload}}:{})}});
 const session=(r,changes={})=>{const at=Date.now()-5000,s='session-'+r;return{id:id(r),accountId:a.id,ownerUserId:a.userId,instagramUserId:r,campaignId:c.id,campaignTemplate:c.template,campaignSessionId:s,campaignJourney:c.journey,stage:'awaiting_link_request',automationPaused:false,linkToken:'token-'+r,initialCommentId:'comment-'+r,lastUserInteractionAt:stamp(at),history:[{role:'user',content:'[Comment] MINDSET',conversationId:id(r),campaignSessionId:s,at:stamp(at)},{role:'assistant',content:'Tap Following to check that you follow @sondre_pv and get the Athlete Mindset link. If the button is missing, reply LINK.',conversationId:id(r),campaignSessionId:s,at:stamp(at)}],...changes}};
-const route=async e=>{const consumed=await gate(e,a);if(!consumed)await mindset(e,a);return consumed};
+const jump=require(base+'/lib/handlers/jumpDirectMessage'),recovery=require(base+'/lib/handlers/linkRecovery');
+const route=async e=>{const consumed=await gate(e,a);if(!consumed && !await jump.handleJumpDirectMessage(e,a) && !await recovery.handleLinkRecovery(e,a))await mindset(e,a);return consumed};
 test.before(async()=>{await db.collection('accounts').doc(a.id).set(a);await db.collection('mindset_campaigns').doc(c.id).set(c)});
-for(const text of ['yes','YES!',' yes please ','yeah','yep','yup','sure','please','ok','okay','send it','i did','yes i did','sure did','already did','done'])test('no conversation: '+text+' stays silent across routing',async()=>{const r='no-session-'+(++seq),before=sends.length,checksBefore=checks.length;assert.equal(await route(event(r,text)),true);assert.equal(sends.length,before);assert.equal(checks.length,checksBefore);assert.equal((await state(r).get()).exists,false);assert.equal((await lead(r).get()).exists,false)});
+for(const text of ['yes','YES!',' yes please ','yeah','yep','yup','sure','please','ok','okay','send it','give it','share that','drop it','send me that','i did','yes i did','sure did','already did','done'])test('no conversation: '+text+' stays silent across routing',async()=>{const r='no-session-'+(++seq),before=sends.length,checksBefore=checks.length;assert.equal(await route(event(r,text)),true);assert.equal(sends.length,before);assert.equal(checks.length,checksBefore);assert.equal((await state(r).get()).exists,false);assert.equal((await lead(r).get()).exists,false)});
 for(const kind of ['stale','future','wrong-owner','wrong-person','wrong-session','wrong-conversation','missing-session','missing-history','human-prompt','last-user-message','unrelated-prompt','closed-stage','wrong-destination','missing-campaign','paused'])test(kind+' state cannot authorize a confirmation',async()=>{const r='invalid-'+kind,v=session(r);switch(kind){case'stale':v.history.at(-1).at=stamp(Date.now()-25*3600000);break;case'future':v.history.at(-1).at=stamp(Date.now()+100000);break;case'wrong-owner':v.ownerUserId='another-owner';break;case'wrong-person':v.instagramUserId='another-person';break;case'wrong-session':v.history.at(-1).campaignSessionId='old-session';break;case'wrong-conversation':v.history.at(-1).conversationId='other-conversation';break;case'missing-session':delete v.campaignSessionId;break;case'missing-history':v.history=[];break;case'human-prompt':v.history.at(-1).source='human';break;case'last-user-message':v.history.push({...v.history.at(-1),role:'user',content:'Personal conversation'});break;case'unrelated-prompt':v.history.at(-1).content='Would you like to get coffee?';break;case'closed-stage':v.stage='completed';break;case'wrong-destination':v.campaignJourney={...c.journey,destinationUrl:'https://example.test/'};break;case'missing-campaign':v.campaignId='removed-campaign';break;case'paused':v.automationPaused=true;break}await lead(r).set(v);const before=sends.length,n=checks.length;assert.equal(await route(event(r)),true);assert.equal(sends.length,before);assert.equal(checks.length,n)});
 test('unrelated gate/direct/recovery state alone cannot give yes a session',async()=>{for(const collection of ['follower_gate_recipients','jump_dm_recipients','app_link_recovery_recipients']){const r='only-'+collection;await db.collection(collection).doc(id(r)).set({accountId:a.id,recipientId:r,campaignId:c.id,template:c.template,awaitingChoice:true,lastInboundAt:stamp(Date.now()-20000),lastAttemptAt:stamp(Date.now()-20000),expiresAt:stamp(Date.now()+3600000)});const before=sends.length;assert.equal(await route(event(r)),true);assert.equal(sends.length,before)}});
 test('recent opening confirmation still checks follower, holds false, and releases only true',async()=>{const r='valid-opening';await lead(r).set(session(r));follows=false;await route(event(r));assert.equal(sends.at(-1).kind,'follow-prompt');assert.equal(checks.at(-1).fresh,true);await state(r).update({lastAttemptAt:stamp(Date.now()-11000)});follows=true;await route(event(r,'done'));assert.equal(sends.at(-1).kind,'gate-message');assert(sends.at(-1).message.endsWith(c.journey.destinationUrl));assert.equal(checks.at(-1).fresh,true)});
@@ -31,3 +32,43 @@ test('duplicate confirmation event cannot send twice',async()=>{const r='duplica
 test('manual-only state blocks personal DM, explicit app request, recovery, button and keyword comment',async()=>{const r='manual-only';await state(r).set({accountId:a.id,recipientId:r,humanHandoff:true,handoffHadLead:false,humanHandoffAt:stamp(Date.now())});const before=sends.length,n=checks.length;for(const text of ['yes','MINDSET','send me the link','done'])await route(event(r,text));await route(event(r,'Following','mindset:send_link:stale'));await comment({id:'manual-comment',from:{id:r,username:'synthetic'},media:{id:'synthetic-post'},text:'MINDSET'},a);assert.equal(sends.length,before);assert.equal(checks.length,n);assert.equal((await lead(r).get()).exists,false);const receipt=await db.collection('mindset_comment_events').doc(a.id+'_manual-comment').get();assert.equal(receipt.data().skippedReason,'follower_gate_recipient_paused')});
 test('manual-only state blocks app-reminder enqueue through the existing shared guard',async()=>{const r='manual-reminder',now=Date.now();await state(r).set({accountId:a.id,recipientId:r,humanHandoff:true,handoffHadLead:false});await db.collection('follower_gate_events').doc('synthetic-confirmed-receipt').set({accountId:a.id,recipientId:r,template:c.template,status:'link_sent',follows:true,incomingAt:stamp(now-1000),updatedAt:stamp(now-500),linkDeliveredAt:stamp(now-500),expiresAt:stamp(now+23*3600000)});const reminders=require(base+'/lib/services/appLinkFollowUps');assert.equal(await reminders.enqueueAppLinkFollowUp(a,'synthetic-confirmed-receipt'),false);assert.equal((await db.collection('app_link_followups').doc(reminders.appLinkFollowUpId(a.id,r,c.template)).get()).exists,false)});
 test('an earlier session opt-out also blocks a current download confirmation',async()=>{const r='opted-out-download',v=session(r,{stage:'awaiting_download_status'});v.history.at(-1).content='Have you downloaded the app?';v.history.splice(1,0,{...v.history[0],content:'STOP'});await lead(r).set(v);const before=sends.length,n=checks.length;assert.equal(await route(event(r)),true);assert.equal(sends.length,before);assert.equal(checks.length,n)});
+
+const ordinaryReplies = [
+  'Sure I’ll give it a shot, I’ll let you know how it goes!',
+  "I'll give it a try", 'Give it a shot!', 'I will send it again',
+  "I'll send you the link tomorrow", 'Can you give it a try?',
+  'I will try to improve my jump with the app',
+  'I love the mindset behind that idea', 'We should work on speed this week',
+  'I can share the app link with my friends',
+];
+for (const text of ordinaryReplies) test('ordinary conversation stays silent: '+text, async()=>{
+  const r='ordinary-'+(++seq), before=sends.length, n=checks.length;
+  const e=event(r,text); await route(e); await route(e);
+  assert.equal(sends.length,before); assert.equal(checks.length,n);
+  assert.equal((await state(r).get()).exists,false);
+  assert.equal((await lead(r).get()).exists,false);
+});
+test('an earlier unscoped chooser does not turn a normal reply into a request',async()=>{
+  const r='prior-chooser'; await state(r).set({accountId:a.id,recipientId:r,campaignId:null,template:null,awaitingChoice:true,lastInboundAt:stamp(Date.now()-20000),lastAttemptAt:stamp(Date.now()-20000),expiresAt:stamp(Date.now()+3600000)});
+  const before=sends.length,n=checks.length;await route(event(r,ordinaryReplies[0]));
+  assert.equal(sends.length,before);assert.equal(checks.length,n);
+});
+test('explicit DM keyword formatting and requests still route with duplicate protection',async()=>{
+  for(const text of ['MINDSET',' mindset!!! ','🔥 MINDSET 👋','ＳＰＥＥＤ!','JUMP','send MINDSET please']){
+    const r='valid-keyword-'+(++seq),before=sends.length,e=event(r,text);
+    await route(e);await route(e);assert.equal(sends.length,before+1,text);
+    assert.equal(checks.at(-1).fresh,true);
+  }
+  const r='request-dedupe',e=event(r,'Could you send me the app link, please?'),before=sends.length;
+  await route(e);await route(e);assert.equal(sends.length,before+1);assert.match(sends.at(-1).message,/Which app link/);
+});
+test('echo, self and wrong-account messages cannot trigger link recovery',async()=>{
+  for(const kind of ['echo','self','owner','wrong-recipient']){
+    const e=event('isolated-'+kind,'send me the link');
+    if(kind==='echo')e.message.is_echo=true;
+    if(kind==='self')e.message.is_self=true;
+    if(kind==='owner')e.sender.id=a.instagramAccountId;
+    if(kind==='wrong-recipient')e.recipient.id='other-account';
+    const before=sends.length,n=checks.length;await route(e);assert.equal(sends.length,before);assert.equal(checks.length,n);
+  }
+});

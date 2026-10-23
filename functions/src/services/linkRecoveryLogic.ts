@@ -1,4 +1,4 @@
-import { normalizeMindsetText, requiresMindsetHumanHandoff } from './mindsetFlowLogic';
+import { isDirectAppLinkCommand, normalizeMindsetText, requiresMindsetHumanHandoff } from './mindsetFlowLogic';
 
 export const VERIFIED_APP_LINKS: Record<string, { name: string; id: string; url: string }> = {
   trackjump_download: {name:'TrackJump',id:'6809517672',url:'https://apps.apple.com/us/app/trackjump-jump-height-rsi/id6809517672'},
@@ -21,9 +21,7 @@ export function isLinkRecoveryRequest(text: string): boolean {
   return /\b(?:did not|didn't|didnt|have not|haven't|havent|never)\s+(?:get|got|receive|received|see|seen)\s+(?:(?:the|a|my|your)\s+)?(?:(?:app|download)\s+)?link\b/.test(s)
     || /\b(?:the |my )?link\s+(?:did not|didn't|didnt|has not|hasn't|hasnt|never)\s+(?:arrive|come through|show up)\b/.test(s)
     || /\b(?:where(?:'s| is)|can't find|cannot find|couldn't find)\s+(?:(?:the|my|your)\s+)?(?:(?:app|download)\s+)?link\b/.test(s)
-    || /\b(?:send|share|resend|re-send)\s+(?:me\s+)?(?:(?:the|my|your)\s+)?(?:(?:app|download)\s+)?link\b/.test(s)
-    || /\b(?:send|share|resend|re-send)\s+(?:me\s+)?(?:it|that)\s+again\b/.test(s)
-    || /^(?:please\s+)?(?:resend|re-send)(?:\s+please)?[.!?]*$/.test(s)
+    || isDirectAppLinkCommand(s)
     || /^(?:(?:i\s+)?(?:didn't|didnt|did not|never)\s+(?:get|receive)\s+it|nothing\s+(?:arrived|came through))[.!?]*$/.test(s)
     || /^(?:the\s+)?(?:app\s+|download\s+)?link(?:\s+(?:again|please))?[.!?]*$/.test(s);
 }

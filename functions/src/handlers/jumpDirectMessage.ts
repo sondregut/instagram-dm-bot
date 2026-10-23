@@ -3,7 +3,7 @@ import * as admin from 'firebase-admin';
 import { db, InstagramAccount } from '../firebase';
 import { sendInstagramDMOnce } from '../services/instagram';
 import { isMindsetAccountAllowed } from '../services/mindsetCampaigns';
-import { containsConfiguredMindsetKeyword, requiresMindsetHumanHandoff } from '../services/mindsetFlowLogic';
+import { isMindsetDirectKeywordRequest, requiresMindsetHumanHandoff } from '../services/mindsetFlowLogic';
 import { buildMindsetConversationId, isMindsetConversationIdentityMatch } from '../services/mindsetConversationIsolation';
 import { getBotMode } from '../utils/runtimeMode';
 import { isLinkOptOut } from '../services/linkRecoveryLogic';
@@ -51,7 +51,7 @@ export function jumpDirectTarget(event: JumpMessageEvent, account: InstagramAcco
     || message.quick_reply || event.postback || message.attachments?.length
     || /https?:\/\//i.test(message.text)
     || isLinkOptOut(message.text) || requiresMindsetHumanHandoff(message.text)
-    || !containsConfiguredMindsetKeyword(message.text, isPoleVaultAccount(account) ? 'VAULT' : 'JUMP')) return null;
+    || !isMindsetDirectKeywordRequest(message.text, isPoleVaultAccount(account) ? 'VAULT' : 'JUMP')) return null;
   return target;
 }
 

@@ -324,6 +324,23 @@ export function normalizeMindsetText(text: string): string {
     .toLowerCase();
 }
 
+// DM entry must express a request, not merely mention a keyword in conversation.
+// Keep this separate from comment normalization and from stage-specific replies.
+export function isMindsetDirectKeywordRequest(text: string, keyword: string): boolean {
+  const normalized = normalizeMindsetText(text)
+    .replace(/^[\s\p{P}\p{S}]+|[\s\p{P}\p{S}]+$/gu, '');
+  const expected = normalizeMindsetText(keyword);
+  if (!expected || !/^[\p{L}\p{N} ]+$/u.test(expected)) return false;
+  return new RegExp(`^(?:please )?(?:send (?:me )?)?${expected}(?: please)?$`, 'u').test(normalized);
+}
+
+/** Whole requests only: "give it a shot" and "I'll send it again" are not commands. */
+export function isDirectAppLinkCommand(text: string): boolean {
+  const normalized = normalizeMindsetText(text);
+  return /^(?:(?:hey|hi|hello)[,!]?\s+)?(?:(?:please|(?:can|could|would|will) you(?: please)?)\s+)?(?:send|share|drop|give|resend|re-send)\s+(?:me\s+)?(?:it|that|(?:(?:the|my|your)\s+)?(?:(?:app|download)\s+)?link|(?:the\s+)?app)(?:\s+over)?(?:\s+again)?(?:,?\s+(?:please|thanks|thank you))?[.!?]*$/.test(normalized)
+    || /^(?:please\s+)?(?:resend|re-send)(?:\s+please)?[.!?]*$/.test(normalized);
+}
+
 function isAndroidAvailabilityQuestion(normalizedText: string): boolean {
   const platform = '(?:android|google play(?: store)?|play ?store|samsung(?: galaxy)?|google pixel|pixel)';
   const questionLead = '(?:is|are|do|does|can|could|will|would|when|where|how|what)';
@@ -342,12 +359,10 @@ export function isMindsetAppLinkRequest(text: string): boolean {
     return false;
   }
 
-  return /\b(?:send|share|drop|give)(?:\s+(?:me\s+)?)?(?:it|that|(?:the\s+)?(?:app\s+|download\s+)?link|(?:the\s+)?app)(?:\s+(?:over\s+)?again)?\b/.test(normalized)
-    || /\b(?:send|share|drop|give)\s+(?:me\s+)?(?:the\s+)?(?:app\s+|download\s+)?link\s+again\b/.test(normalized)
-    || /\b(?:resend|re-send)(?:\s+(?:me\s+)?)?(?:it|that|the\s+(?:app\s+|download\s+)?link|(?:the\s+)?app)?\b/.test(normalized)
-    || /\b(?:can|could)\s+i\s+(?:get|have)\s+(?:the\s+)?(?:app\s+|download\s+)?link\b/.test(normalized)
-    || /\b(?:what|where)(?:'s| is)\s+(?:the\s+)?(?:app\s+|download\s+)?link\b/.test(normalized)
-    || /\b(?:need|want)\s+(?:the\s+)?(?:app\s+|download\s+)?link(?:\s+again)?\b/.test(normalized)
+  return isDirectAppLinkCommand(normalized)
+    || /^(?:can|could)\s+i\s+(?:get|have)\s+(?:the\s+)?(?:app\s+|download\s+)?link(?:,?\s+please)?[.!?]*$/.test(normalized)
+    || /^(?:what|where)(?:'s| is)\s+(?:the\s+)?(?:app\s+|download\s+)?link[.!?]*$/.test(normalized)
+    || /^(?:i\s+)?(?:need|want)\s+(?:the\s+)?(?:app\s+|download\s+)?link(?:\s+again)?(?:,?\s+please)?[.!?]*$/.test(normalized)
     || /^(?:the\s+)?(?:app\s+|download\s+)?link(?:\s+(?:again|please))?[.!?]*$/.test(normalized);
 }
 

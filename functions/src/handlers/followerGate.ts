@@ -5,7 +5,7 @@ import { db, InstagramAccount } from '../firebase';
 import { getBotMode, isMindsetModeActive } from '../utils/runtimeMode';
 import { getStoredMindsetCampaigns, runtimeMindsetCampaign, isMindsetAccountAllowed, MindsetCampaign } from '../services/mindsetCampaigns';
 import { buildMindsetConversationId, isMindsetConversationIdentityMatch } from '../services/mindsetConversationIsolation';
-import { classifyMindsetReplyForStage, containsConfiguredMindsetKeyword, normalizeMindsetText, requiresMindsetHumanHandoff } from '../services/mindsetFlowLogic';
+import { classifyMindsetReplyForStage, isMindsetDirectKeywordRequest, normalizeMindsetText, requiresMindsetHumanHandoff } from '../services/mindsetFlowLogic';
 import { isLinkOptOut, isLinkRecoveryRequest, isVerifiedCampaignUrl, mentionedAppTemplates, VERIFIED_APP_LINKS } from '../services/linkRecoveryLogic';
 import { sendInstagramDMOnce, sendInstagramGatePromptOnce } from '../services/instagram';
 import { verifyFollower } from '../services/followerVerification';
@@ -28,7 +28,7 @@ const optOut = (text: string): boolean => isLinkOptOut(text)
   || classifyMindsetReplyForStage(text, 'awaiting_link_request') === 'not_interested';
 
 // These words do not independently request an app or consent to a bot conversation.
-const bareConfirmation = (text: string): boolean => /^(?:yes(?: please| i did)?|yeah|yep|yup|sure(?: did)?|please|ok|okay|i did|already did|done|send it)[.!\s]*$/
+const bareConfirmation = (text: string): boolean => /^(?:yes(?: please| i did)?|yeah|yep|yup|sure(?: did)?|please|ok|okay|i did|already did|done|(?:send|share|drop|give)(?: me)? (?:it|that))[.!\s]*$/
   .test(normalizeMindsetText(text));
 
 function recentCampaignConfirmation(lead: any, identity: Parameters<typeof isMindsetConversationIdentityMatch>[1],
@@ -147,10 +147,11 @@ export async function handleFollowerGateMessage(event: FollowerGateEvent, accoun
       recovery = intent === 'app_link_request';
     }
   }
-  // Preserve v68 for existing accounts. TrackSpeed has no direct-message keyword entry.
-  const explicitMatches = !speedOnly && possibleKeyword ? directCampaigns.filter(c => containsConfiguredMindsetKeyword(text, c.keyword)) : [];
+  // Only explicit keyword requests enter from DMs; incidental mentions stay silent.
+  // TrackSpeed continues to have no direct-message keyword entry.
+  const explicitMatches = !speedOnly && possibleKeyword ? directCampaigns.filter(c => isMindsetDirectKeywordRequest(text, c.keyword)) : [];
   const directMatches = explicitMatches.length ? explicitMatches
-    : !speedOnly && possibleKeyword ? stored.filter(c => campaigns.includes(c) && containsConfiguredMindsetKeyword(text, c.keyword)) : [];
+    : !speedOnly && possibleKeyword ? stored.filter(c => campaigns.includes(c) && isMindsetDirectKeywordRequest(text, c.keyword)) : [];
   if (!isRecheck && !isLinkButton && directMatches.length === 0 && !recovery && !appChoice && !options.forceLinkRequest) return false;
   if (appChoice && !prior?.awaitingChoice && directMatches.length === 0) return false;
   const recheckUsesPending = isRecheck && Boolean(prior?.campaignId);

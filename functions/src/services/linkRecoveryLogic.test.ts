@@ -13,3 +13,26 @@ test('only the verified App Store product ID and HTTPS host are eligible',()=>{
  for(const [template,app] of Object.entries(VERIFIED_APP_LINKS))assert(isVerifiedCampaignUrl(template,app.url));
  for(const url of ['https://evil.example/id6809517672','http://apps.apple.com/app/id6809517672','https://apps.apple.com/app/id6757509163','https://apps.apple.com/app/id6809517672?redirect=evil','https://x@apps.apple.com/app/id6809517672'])assert.equal(isVerifiedCampaignUrl('trackjump_download',url),false);
 });
+
+test('normal collaboration sentences cannot become app-link commands or recovery requests',()=>{
+ for(const text of [
+  'Sure I’ll give it a shot, I’ll let you know how it goes!',
+  "I'll give it a try", 'Give it a shot!', 'Can you give it a try?',
+  "I'll send it again", 'I can share the app link with friends',
+  'They asked me to resend the link', 'We can give the app another shot',
+  'When you send me the link I will check the design',
+  'I need the link between training and mindset explained',
+ ]) {
+  assert.equal(isMindsetAppLinkRequest(text),false,text);
+  assert.equal(isLinkRecoveryRequest(text),false,text);
+  assert.notEqual(classifyMindsetReply(text),'app_link_request',text);
+ }
+});
+test('whole explicit requests keep capitalization, punctuation and polite forms',()=>{
+ for(const text of ['SEND ME THE LINK!!!','Could you send me the app link, please?',
+  'Hey, can you share the download link?', 'Send my link again please',
+  'Give me the link', 'Drop the link please', 'Please resend', 'Send it again',
+  'Share that again', 'Where is the download link?', 'I need the link again']) {
+  assert.equal(isMindsetAppLinkRequest(text),true,text);
+ }
+});
